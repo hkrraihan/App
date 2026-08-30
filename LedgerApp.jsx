@@ -782,15 +782,10 @@ function computePlaybookStats(rules, checkins) {
 }
 
 const MARKET_SESSIONS = [
-  { id: "sydney", label: "Sydney", startUTC: 22, endUTC: 7, color: "#6C8EBF" },
-  { id: "tokyo", label: "Tokyo", startUTC: 0, endUTC: 9, color: "#BF6C8E" },
+  { id: "asia", label: "Asia", startUTC: 22, endUTC: 9, color: "#6C8EBF" },
   { id: "london", label: "London", startUTC: 8, endUTC: 17, color: "#6CBF8E" },
   { id: "newyork", label: "New York", startUTC: 13, endUTC: 22, color: "#BFA26C" },
 ];
-
-const mod24 = (h) => ((h % 24) + 24) % 24;
-
-function sessionOpenAtUTCHour(session, hourUTC) {
   const h = mod24(hourUTC);
   if (session.startUTC <= session.endUTC) {
     return h >= session.startUTC && h < session.endUTC;
@@ -6799,7 +6794,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       const totalTableWidth =
         JOURNAL_TOGGLE_COL_WIDTH + JOURNAL_COLUMNS.reduce((s, c) => s + journalColWidths[c.id], 0) + 36;
 
-      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "13px", border: "none" };
+      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "12px", border: "none" };
       const detailFieldStyle = { color: palette.text, fontFamily: mono, fontSize: "13px", border: "none" };
 
       const autoResizeTextarea = (el) => {
@@ -6951,7 +6946,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                 color: val ? palette.text : palette.textFaint,
                 border: `1px solid ${palette.border}`,
                 borderRadius: "6px",
-                padding: "8px 10px",
+                padding: "5px 8px",
               }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
@@ -6977,7 +6972,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                 color: val ? palette.text : palette.textFaint,
                 border: `1px solid ${palette.border}`,
                 borderRadius: "6px",
-                padding: "8px 10px",
+                padding: "5px 8px",
               }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
@@ -7003,7 +6998,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                 color: val ? palette.text : palette.textFaint,
                 border: `1px solid ${palette.border}`,
                 borderRadius: "6px",
-                padding: "8px 10px",
+                padding: "5px 8px",
               }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
@@ -7020,25 +7015,23 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         return (
           <textarea
             value={row[field.id] || ""}
-            onChange={(e) => {
-              updateJournalField(row.id, field.id, e.target.value, dateForRow);
-              autoResizeTextarea(e.target);
-            }}
-            ref={autoResizeTextarea}
+            onChange={(e) => updateJournalField(row.id, field.id, e.target.value, dateForRow)}
             placeholder={field.id === "note" ? "Add note" : "Add mistake"}
-            rows={1}
+            rows={3}
             className="w-full bg-transparent outline-none block"
             style={{
               ...detailFieldStyle,
               border: `1px solid ${palette.border}`,
               borderRadius: "6px",
-              padding: "8px 10px",
-              resize: "none",
-              overflow: "hidden",
+              padding: "5px 8px",
+              resize: "vertical",
+              overflow: "auto",
               whiteSpace: "pre-wrap",
               overflowWrap: "break-word",
               wordBreak: "break-word",
               lineHeight: "1.5",
+              minHeight: "58px",
+              maxHeight: "130px",
             }}
           />
         );
@@ -7108,7 +7101,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                             borderBottom: `1px solid ${palette.gold}55`,
                             borderRight: `1px solid ${palette.border}`,
                             textAlign: "left",
-                            padding: "14px 10px",
+                            padding: "9px 8px",
                           }}
                         >
                           <div className="flex items-center justify-between" style={{ position: "relative" }}>
@@ -7159,9 +7152,9 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                                 width: `${JOURNAL_TOGGLE_COL_WIDTH}px`,
                                 minWidth: `${JOURNAL_TOGGLE_COL_WIDTH}px`,
                                 borderBottom: `1px solid ${palette.border}`,
-                                textAlign: "center",
-                                verticalAlign: "top",
-                                paddingTop: "10px",
+                            textAlign: "center",
+                            verticalAlign: "top",
+                            paddingTop: "6px",
                               }}
                             >
                               {!row._placeholder && (
@@ -7192,7 +7185,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                                   maxWidth: `${journalColWidths[col.id]}px`,
                                   borderBottom: `1px solid ${palette.border}`,
                                   borderRight: `1px solid ${palette.border}`,
-                                  padding: "10px 10px",
+                                  padding: "5px 8px",
                                   verticalAlign: "top",
                                 }}
                               >
@@ -7201,12 +7194,12 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                             ))}
                             <td
                               style={{
-                                width: "36px",
-                                minWidth: "36px",
-                                borderBottom: `1px solid ${palette.border}`,
-                                textAlign: "center",
-                                verticalAlign: "top",
-                                paddingTop: "10px",
+                            width: "36px",
+                            minWidth: "36px",
+                            borderBottom: `1px solid ${palette.border}`,
+                            textAlign: "center",
+                            verticalAlign: "top",
+                            paddingTop: "6px",
                               }}
                             >
                               {!row._placeholder && (
@@ -7229,7 +7222,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                                 style={{
                                   borderBottom: `1px solid ${palette.border}`,
                                   background: `${palette.field}55`,
-                                  padding: "14px 16px",
+                                  padding: "10px 12px",
                                 }}
                               >
                                 <div className="grid grid-cols-2 gap-3 mb-3">
@@ -7788,7 +7781,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
           <div className="flex items-center justify-between mb-4">
             <span style={{ color: palette.textFaint, fontSize: "11px", fontFamily: mono }}>
-              {countLines(blocks)} ln \u2013 {countWords(bodyText)} words \u2013 {bodyText.length} chars
+              {countLines(blocks)} ln – {countWords(bodyText)} words – {bodyText.length} chars
             </span>
             <span style={{ color: palette.textFaint, fontSize: "11px", fontFamily: mono }}>
               Saved {new Date(activeNote.updatedAt).toLocaleTimeString()}
@@ -8341,7 +8334,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           })}
 
           <p className="text-xs mt-2 mb-4" style={{ color: palette.textFaint }}>
-            Standard session hours in UTC: Sydney 22:00–07:00, Tokyo 00:00–09:00, London 08:00–17:00,
+            Standard session hours in UTC: Asia 22:00–09:00, London 08:00–17:00,
             New York 13:00–22:00. Shown here converted to your device's local time (
             {tzName || "detected automatically"}), not adjusted for daylight saving.
           </p>
