@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Fragment } from "react";
-import { Scale, LineChart as CurveIcon, ArrowLeftRight, Trash2, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, Newspaper, Share2, X, Download, Upload, Copy, Sun, Moon, Bell, Info, Camera, Pencil, Check, Clock, Lightbulb, BookOpen, ClipboardCheck, TrendingUp, Flame, Target, FileText, Search, Minus, WrapText, CalendarClock, Image as ImageIcon } from "lucide-react";
+import { Scale, LineChart as CurveIcon, ArrowLeftRight, Trash2, Plus, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, Newspaper, Share2, X, Download, Upload, Copy, Sun, Moon, Bell, Info, Camera, Pencil, Check, Clock, Lightbulb, BookOpen, ClipboardCheck, TrendingUp, Flame, Target, FileText, Search, Minus, WrapText, CalendarClock } from "lucide-react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -72,7 +72,6 @@ if (typeof window !== "undefined" && !window.storage) {
     },
   };
 }
-
 
 const DARK_PALETTE = {
   bg: "#0A0E16",
@@ -614,7 +613,7 @@ const TABS = [
 const NOTEPAD_STORAGE_KEY = "notepad:notes";
 const NOTEPAD_FONT_SIZES = [12, 13, 14, 16, 18, 20, 24];
 const DEFAULT_NOTEPAD_FONT_SIZE = 14;
-const NOTEPAD_MAX_IMAGES_PER_NOTE = 6;
+const MAX_JOURNAL_PHOTOS_PER_ROW = 2;
 
 function makeBlockId() {
   return `blk-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -635,10 +634,6 @@ function blocksText(blocks) {
     .filter((b) => b.type === "text")
     .map((b) => b.text || "")
     .join("");
-}
-
-function noteImageCount(blocks) {
-  return (blocks || []).filter((b) => b.type === "image").length;
 }
 
 function countWords(text) {
@@ -686,54 +681,6 @@ function blocksToExportText(blocks) {
   return (blocks || []).map((b) => (b.type === "image" ? "\n[Image attached]\n" : b.text || "")).join("");
 }
 
-function insertImageBlock(blocks, activeRef, noteId, dataUrl) {
-  const imgId = makeBlockId();
-  let idx = -1;
-  if (activeRef && activeRef.noteId === noteId) {
-    idx = blocks.findIndex((b) => b.id === activeRef.blockId && b.type === "text");
-  }
-  if (idx === -1) {
-    const afterId = makeBlockId();
-    return {
-      blocks: [...blocks, { id: imgId, type: "image", src: dataUrl }, { id: afterId, type: "text", text: "" }],
-      focusBlockId: afterId,
-    };
-  }
-  const block = blocks[idx];
-  const text = block.text || "";
-  const pos = Math.max(0, Math.min(activeRef.pos ?? text.length, text.length));
-  const before = text.slice(0, pos);
-  const after = text.slice(pos);
-  const afterId = makeBlockId();
-  const newBlocks = [
-    ...blocks.slice(0, idx),
-    { id: block.id, type: "text", text: before },
-    { id: imgId, type: "image", src: dataUrl },
-    { id: afterId, type: "text", text: after },
-    ...blocks.slice(idx + 1),
-  ];
-  return { blocks: newBlocks, focusBlockId: afterId };
-}
-
-function removeImageBlock(blocks, blockId) {
-  const idx = blocks.findIndex((b) => b.id === blockId);
-  if (idx === -1) return blocks;
-  const prev = blocks[idx - 1];
-  const next = blocks[idx + 1];
-  let result;
-  if (prev && prev.type === "text" && next && next.type === "text") {
-    const mergedText = (prev.text || "") + (next.text || "");
-    result = [
-      ...blocks.slice(0, idx - 1),
-      { id: prev.id, type: "text", text: mergedText },
-      ...blocks.slice(idx + 2),
-    ];
-  } else {
-    result = blocks.filter((b) => b.id !== blockId);
-  }
-  return result.length > 0 ? result : [{ id: makeBlockId(), type: "text", text: "" }];
-}
-
 function autoGrowBlock(el) {
   if (!el) return;
   el.style.height = "auto";
@@ -766,6 +713,7 @@ const JOURNAL_COLUMNS = [
   { id: "pair", label: "Pair" },
   { id: "trend", label: "Trend" },
   { id: "rr", label: "R:R" },
+  { id: "pnl", label: "PnL" },
   { id: "setup", label: "Setup" },
   { id: "outcome", label: "Outcome" },
 ];
@@ -776,7 +724,7 @@ const JOURNAL_DETAIL_FIELDS = [
   { id: "mistake", label: "Mistake" },
   { id: "note", label: "Note" },
 ];
-const DEFAULT_JOURNAL_COL_WIDTHS = { date: 140, pair: 110, trend: 130, rr: 80, setup: 130, outcome: 110 };
+const DEFAULT_JOURNAL_COL_WIDTHS = { date: 140, pair: 110, trend: 130, rr: 80, pnl: 90, setup: 130, outcome: 110 };
 const JOURNAL_TOGGLE_COL_WIDTH = 34;
 const JOURNAL_COL_MIN = 56;
 const JOURNAL_COL_MAX = 280;
@@ -834,7 +782,8 @@ function computePlaybookStats(rules, checkins) {
 }
 
 const MARKET_SESSIONS = [
-  { id: "asia", label: "Asia", startUTC: 22, endUTC: 9, color: "#6C8EBF" },
+  { id: "sydney", label: "Sydney", startUTC: 22, endUTC: 7, color: "#6C8EBF" },
+  { id: "tokyo", label: "Tokyo", startUTC: 0, endUTC: 9, color: "#BF6C8E" },
   { id: "london", label: "London", startUTC: 8, endUTC: 17, color: "#6CBF8E" },
   { id: "newyork", label: "New York", startUTC: 13, endUTC: 22, color: "#BFA26C" },
 ];
@@ -1481,6 +1430,32 @@ function journalMonthlyVolume(rows, monthsBack = 6) {
   return months.map((m) => ({ label: m.label, count: counts[m.key] || 0 }));
 }
 
+function journalPnLByMonth(rows, year) {
+  const byMonth = {};
+  rows.forEach((r) => {
+    if (!r.date || r.pnl === undefined || r.pnl === "") return;
+    const [y, m] = r.date.split("-").map(Number);
+    if (y !== year) return;
+    const pnl = parseFloat(r.pnl);
+    if (!Number.isFinite(pnl)) return;
+    byMonth[m] = (byMonth[m] || 0) + pnl;
+  });
+  return byMonth;
+}
+
+function journalPnLByDay(rows, year, month) {
+  const byDay = {};
+  rows.forEach((r) => {
+    if (!r.date || r.pnl === undefined || r.pnl === "") return;
+    const [y, m, d] = r.date.split("-").map(Number);
+    if (y !== year || m !== month) return;
+    const pnl = parseFloat(r.pnl);
+    if (!Number.isFinite(pnl)) return;
+    byDay[d] = (byDay[d] || 0) + pnl;
+  });
+  return byDay;
+}
+
 function journalSessionByDay(rows, maxDays = 30) {
   const bySession = {};
   rows.forEach((r) => {
@@ -1878,6 +1853,14 @@ export default function LedgerApp() {
   const journalImportInputRef = useRef(null);
   const [journalImportMsg, setJournalImportMsg] = useState("");
   const [journalExpandedRows, setJournalExpandedRows] = useState({});
+  const journalPhotoInputRef = useRef(null);
+  const [journalPhotoTarget, setJournalPhotoTarget] = useState(null);
+  const [journalPhotoSaving, setJournalPhotoSaving] = useState(false);
+  const [journalPhotoError, setJournalPhotoError] = useState("");
+  const [viewingJournalPhoto, setViewingJournalPhoto] = useState(null);
+  const [pendingJournalPhotoDelete, setPendingJournalPhotoDelete] = useState(null);
+  const [journalInsightYear, setJournalInsightYear] = useState(() => new Date().getFullYear());
+  const [journalInsightMonth, setJournalInsightMonth] = useState(null);
 
   const [playbookRules, setPlaybookRules] = useState([]);
   const [playbookRulesLoaded, setPlaybookRulesLoaded] = useState(false);
@@ -1966,12 +1949,7 @@ export default function LedgerApp() {
   };
   const notepadActiveBlockRef = useRef({ noteId: null, blockId: null, pos: 0 });
   const [notepadFocusBlock, setNotepadFocusBlock] = useState(null);
-  const notepadImageInputRef = useRef(null);
-  const [viewingNoteImage, setViewingNoteImage] = useState(null);
-  const [notepadImageSaving, setNotepadImageSaving] = useState(false);
-  const [notepadImageError, setNotepadImageError] = useState("");
   const [pendingNoteDelete, setPendingNoteDelete] = useState(null);
-  const [pendingNoteImageDelete, setPendingNoteImageDelete] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -2414,7 +2392,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     const id = `j-auto-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     persistJournalEntries([
       ...journalEntries,
-      { id, date: dateKey, pair: "", trend: "", rr: "", setup: setupId || "", mistake: "", note: "" },
+     { id, date: dateKey, pair: "", trend: "", rr: "", pnl: "", setup: setupId || "", outcome: "", mistake: "", note: "" },
     ]);
   };
 
@@ -2441,7 +2419,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     const date = defaultDate || dayKeyFromDate(new Date());
     persistJournalEntries([
       ...journalEntries,
-      { id, date, pair: "", trend: "", rr: "", setup: "", mistake: "", note: "" },
+      { id, date, pair: "", trend: "", rr: "", pnl: "", setup: "", outcome: "", mistake: "", note: "" },
     ]);
     setJournalFocusRowId(id);
   };
@@ -2464,6 +2442,46 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         // ignore \u2014 dragging still works without capture on most browsers
       }
     }
+  };
+
+  const openJournalPhotoPicker = (rowId) => {
+    setJournalPhotoError("");
+    setJournalPhotoTarget(rowId);
+    if (journalPhotoInputRef.current) journalPhotoInputRef.current.click();
+  };
+
+  const handleJournalPhotoChange = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    const targetId = journalPhotoTarget;
+    setJournalPhotoTarget(null);
+    if (!file || !targetId) return;
+    setJournalPhotoError("");
+    setJournalPhotoSaving(true);
+    try {
+      const dataUrl = await resizeImageFile(file);
+      persistJournalEntries(
+        journalEntries.map((r) => {
+          if (r.id !== targetId) return r;
+          const existing = Array.isArray(r.photos) ? r.photos : [];
+          if (existing.length >= MAX_JOURNAL_PHOTOS_PER_ROW) return r;
+          return { ...r, photos: [...existing, dataUrl] };
+        })
+      );
+    } catch (err) {
+      setJournalPhotoError("Couldn't attach that image, please try again.");
+    } finally {
+      setJournalPhotoSaving(false);
+    }
+  };
+
+  const removeJournalPhoto = (rowId, index) => {
+    persistJournalEntries(
+      journalEntries.map((r) => {
+        if (r.id !== rowId) return r;
+        return { ...r, photos: (r.photos || []).filter((_, i) => i !== index) };
+      })
+    );
   };
 
   const moveJournalResize = (e) => {
@@ -2543,7 +2561,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
 
-        const header = ["Date", "Pair", "Trend", "R:R", "Setup", "Outcome", "Session", "Mood", "Confidence", "Mistake", "Note"];
+    const header = ["Date", "Pair", "Trend", "R:R", "PnL", "Setup", "Outcome", "Session", "Mood", "Confidence", "Mistake", "Note"];
     const lines = [header.join(",")];
     rows.forEach((r) => {
       const trendLabel = TREND_OPTIONS.find((t) => t.id === r.trend)?.label || r.trend || "";
@@ -2554,6 +2572,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           r.pair || "",
           trendLabel,
           r.rr || "",
+          r.pnl || "",
           setupLabel,
           outcomeLabel(r.outcome),
           sessionLabelFor(r.session),
@@ -2684,6 +2703,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           pair: header.indexOf("pair"),
           trend: header.indexOf("trend"),
           rr: header.indexOf("r:r"),
+          pnl: header.indexOf("pnl"),
           setup: header.indexOf("setup"),
           outcome: header.indexOf("outcome"),
           session: header.indexOf("session"),
@@ -2704,7 +2724,8 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             pair: idx.pair !== -1 ? (r[idx.pair] || "").trim() : "",
             trend: idx.trend !== -1 ? findTrendIdByLabel(r[idx.trend]) : "",
             rr: idx.rr !== -1 ? (r[idx.rr] || "").trim() : "",
-            setup: idx.setup !== -1 ? findSetupIdByLabel(r[idx.setup]) : "",
+            pnl: idx.pnl !== -1 ? (r[idx.pnl] || "").trim() : "",
+            setup: idx.setup !== -1 ? findSetupIdByLabel(r[idx.setup]) : "",            
             outcome: idx.outcome !== -1 ? findOutcomeIdByLabel(r[idx.outcome]) : "",
             session: idx.session !== -1 ? findSessionIdByLabel(r[idx.session]) : "",
             mood: idx.mood !== -1 ? findMoodIdByLabel(r[idx.mood]) : "",
@@ -3453,59 +3474,6 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
   const trackNotepadCursor = (noteId, blockId) => (e) => {
     notepadActiveBlockRef.current = { noteId, blockId, pos: e.target.selectionStart };
-  };
-
-  const openNoteImagePicker = () => {
-    setNotepadImageError("");
-    if (notepadImageInputRef.current) notepadImageInputRef.current.click();
-  };
-
-  const handleNoteImageChange = async (e) => {
-    const file = e.target.files && e.target.files[0];
-    e.target.value = "";
-    const targetId = activeNoteId;
-    if (!file || !targetId) return;
-    setNotepadImageError("");
-    setNotepadImageSaving(true);
-    try {
-      const dataUrl = await resizeImageFile(file);
-      const note = notepadNotes.find((n) => n.id === targetId);
-      if (note && noteImageCount(note.blocks) < NOTEPAD_MAX_IMAGES_PER_NOTE) {
-        const result = insertImageBlock(note.blocks, notepadActiveBlockRef.current, targetId, dataUrl);
-        updateNote(targetId, { blocks: result.blocks });
-        setNotepadFocusBlock({ blockId: result.focusBlockId, pos: 0 });
-      }
-    } catch (err) {
-      setNotepadImageError("Couldn't attach that image, please try again.");
-    } finally {
-      setNotepadImageSaving(false);
-    }
-  };
-
-  const requestDeleteNoteImage = (noteId, blockId) => setPendingNoteImageDelete({ noteId, blockId });
-  const cancelDeleteNoteImage = () => setPendingNoteImageDelete(null);
-  const confirmDeleteNoteImage = () => {
-    if (!pendingNoteImageDelete) return;
-    const { noteId, blockId } = pendingNoteImageDelete;
-    const note = notepadNotes.find((n) => n.id === noteId);
-    if (note) {
-      updateNote(noteId, { blocks: removeImageBlock(note.blocks, blockId) });
-    }
-    setPendingNoteImageDelete(null);
-    setViewingNoteImage((cur) => (cur && cur.noteId === noteId && cur.blockId === blockId ? null : cur));
-  };
-
-  const downloadNoteImage = (src, note, blockId) => {
-    setNotepadMsg("");
-    try {
-      const imageBlocks = (note.blocks || []).filter((b) => b.type === "image");
-      const idx = imageBlocks.findIndex((b) => b.id === blockId);
-      const filename = `${(note.title || "note").replace(/[^\w\-]+/g, "_") || "note"}-image-${idx === -1 ? 1 : idx + 1}.jpg`;
-      const file = dataUrlToFile(src, filename);
-      downloadImageFile(file, filename, "Downloaded.");
-    } catch (err) {
-      setNotepadMsg("Couldn't prepare that image to download.");
-    }
   };
 
   const downloadNoteText = (note) => {
@@ -5712,6 +5680,91 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           sub="Sourced from the Journal tab's spreadsheet, not your logged trades"
         />
 
+        {/* Yearly PnL Calendar */}
+        <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
+          Yearly PnL Calendar
+        </span>
+        <div className="flex items-center justify-between mb-4">
+          <button type="button" onClick={() => { setJournalInsightYear((y) => y - 1); setJournalInsightMonth(null); }} className={TAP} style={{ color: palette.textMuted, padding: "4px" }} aria-label="Previous year"><ChevronLeft size={20} /></button>
+          <span style={{ fontFamily: mono, fontSize: "1.1rem", color: palette.text, letterSpacing: "0.04em" }}>{journalInsightYear}</span>
+          <button type="button" onClick={() => { setJournalInsightYear((y) => y + 1); setJournalInsightMonth(null); }} className={TAP} style={{ color: palette.textMuted, padding: "4px" }} aria-label="Next year"><ChevronRight size={20} /></button>
+        </div>
+        {(() => {
+          const pnlByMonth = journalPnLByMonth(journalRows, journalInsightYear);
+          const pnlByDay = journalInsightMonth ? journalPnLByDay(journalRows, journalInsightYear, journalInsightMonth) : {};
+          const yearHasData = Object.keys(pnlByMonth).length > 0;
+          if (journalInsightMonth === null) {
+            return (
+              <>
+                {!yearHasData && (
+                  <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
+                    No PnL data for {journalInsightYear}. Fill in the PnL column in your journal rows to see this calendar.
+                  </p>
+                )}
+                <div className="grid grid-cols-3 gap-3 mb-6">
+                  {MONTH_SHORT.map((mLabel, mIdx) => {
+                    const monthPnl = pnlByMonth[mIdx + 1];
+                    const hasPnl = monthPnl !== undefined;
+                    return (
+                      <button
+                        key={mIdx}
+                        type="button"
+                        onClick={() => hasPnl && setJournalInsightMonth(mIdx + 1)}
+                        className={`flex flex-col items-center justify-center gap-1 rounded-2xl ${hasPnl ? TAP : ""}`}
+                        style={{
+                          aspectRatio: "1",
+                          background: hasPnl ? (monthPnl >= 0 ? `${palette.green}1A` : `${palette.red}1A`) : palette.surface,
+                          border: `1px solid ${hasPnl ? (monthPnl >= 0 ? palette.green : palette.red) + "55" : palette.border}`,
+                          cursor: hasPnl ? "pointer" : "default",
+                          transition: THEME_TRANSITION,
+                        }}
+                      >
+              <span style={{ fontFamily: mono, fontSize: "13px", fontWeight: 600, color: hasPnl ? palette.text : palette.textFaint }}>{mLabel}</span>
+                        {hasPnl && (
+                          <span style={{ fontFamily: mono, fontSize: "10px", color: monthPnl >= 0 ? palette.green : palette.red }}>
+                            {monthPnl >= 0 ? "+" : ""}{fmtMoney(monthPnl)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs mb-6" style={{ color: palette.textFaint }}>Tap a coloured month to see its daily breakdown.</p>
+              </>
+            );
+          }
+          const daysInMonth = new Date(journalInsightYear, journalInsightMonth, 0).getDate();
+          const monthTotal = pnlByMonth[journalInsightMonth] || 0;
+          return (
+            <>
+              <button type="button" onClick={() => setJournalInsightMonth(null)} className={`flex items-center gap-1 mb-3 ${TAP}`} style={{ color: palette.textMuted, fontSize: "12px", fontFamily: mono }}>
+                <ChevronLeft size={16} />{journalInsightYear}
+              </button>
+              <div className="rounded-2xl p-4 mb-6" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
+                <div className="flex items-baseline justify-between mb-3">
+                  <span style={{ fontFamily: mono, fontSize: "13px", fontWeight: 600, color: palette.text }}>{MONTH_NAMES[journalInsightMonth - 1]} {journalInsightYear}</span>
+                  <span style={{ fontFamily: mono, fontSize: "13px", color: monthTotal >= 0 ? palette.green : palette.red }}>
+                    {monthTotal >= 0 ? "+" : ""}{fmtMoney(monthTotal)} total
+                  </span>
+                </div>
+                {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                  const dayPnl = pnlByDay[day];
+                  if (dayPnl === undefined) return null;
+                  return (
+                    <div key={day} className="flex items-center justify-between py-2" style={{ borderBottom: `1px solid ${palette.border}` }}>
+                      <span style={{ color: palette.textMuted, fontSize: "12px", fontFamily: mono }}>
+                        {MONTH_SHORT[journalInsightMonth - 1]} {day}
+                      </span>
+                      <span style={{ fontFamily: mono, fontSize: "13px", color: dayPnl >= 0 ? palette.green : palette.red }}>
+                        {dayPnl >= 0 ? "+" : ""}{fmtMoney(dayPnl)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          );
+        })()}
         <span
           className="block mb-1.5 uppercase"
           style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
@@ -5974,42 +6027,6 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             </div>
           </>
         )}
-
-{setupRadarData.rows.length > 0 && (
-  <>
-    <span
-      className="block mb-1.5 uppercase"
-      style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
-    >
-      Setup Radar
-    </span>
-    <div
-      className="rounded-2xl p-4 mb-6"
-      style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}
-    >
-      <div style={{ width: "100%", height: 260 }}>
-        <ResponsiveContainer>
-          <RadarChart data={setupRadarData.rows}>
-            <PolarGrid stroke={palette.border} />
-            <PolarAngleAxis dataKey="label" tick={{ fill: palette.textMuted, fontSize: 10, fontFamily: mono }} />
-            <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fill: palette.textFaint, fontSize: 9, fontFamily: mono }} />
-            <Radar name="Frequency" dataKey="Frequency" stroke={palette.gold} fill={palette.gold} fillOpacity={0.3} />
-            <Radar name="Avg R:R" dataKey="Avg R:R" stroke={palette.green} fill={palette.green} fillOpacity={0.25} />
-            <Radar name="Clean Rate" dataKey="Clean Rate" stroke={palette.goldBright} fill={palette.goldBright} fillOpacity={0.2} />
-            <Legend wrapperStyle={{ fontFamily: mono, fontSize: "10px", color: palette.textMuted }} />
-            <Tooltip
-              contentStyle={{ background: palette.field, border: `1px solid ${palette.border}`, borderRadius: "8px", fontFamily: mono, fontSize: "12px" }}
-              labelStyle={{ color: palette.textMuted }}
-            />
-          </RadarChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-    <p className="text-xs mb-6" style={{ color: palette.textFaint }}>
-      Frequency = how often you use that setup vs. your most-used one. Avg R:R = average planned R:R vs. your best setup. Clean Rate = % of entries with no mistake logged.
-    </p>
-  </>
-)}
 
         {rrSeries.length > 1 && (
           <>
@@ -6761,12 +6778,13 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         realRows.length > 0
           ? realRows
           : [
-              {
+               {
                 id: `placeholder-${monthPrefix}`,
                 date: monthMinDate,
                 pair: "",
                 trend: "",
                 rr: "",
+                pnl: "",
                 setup: "",
                 outcome: "",
                 session: "",
@@ -6781,8 +6799,8 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       const totalTableWidth =
         JOURNAL_TOGGLE_COL_WIDTH + JOURNAL_COLUMNS.reduce((s, c) => s + journalColWidths[c.id], 0) + 36;
 
-      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "14px", border: "none" };
-      const detailFieldStyle = { color: palette.text, fontFamily: mono, fontSize: "14px", border: "none" };
+      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "13px", border: "none" };
+      const detailFieldStyle = { color: palette.text, fontFamily: mono, fontSize: "13px", border: "none" };
 
       const autoResizeTextarea = (el) => {
         if (!el) return;
@@ -6859,6 +6877,25 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             </select>
           );
         }
+
+        if (col.id === "pnl") {
+          const val = row.pnl || "";
+          const n = parseFloat(val);
+          const hasVal = val !== "" && Number.isFinite(n);
+          return (
+            <input
+              type="text"
+              inputMode="decimal"
+              ref={registerRef}
+              onKeyDown={onCellKeyDown}
+              value={val}
+              onChange={(e) => updateJournalField(row.id, "pnl", e.target.value, dateForRow)}
+              placeholder="PnL"
+              className="w-full bg-transparent outline-none"
+              style={{ ...cellInputStyle, color: hasVal ? (n >= 0 ? palette.green : palette.red) : palette.textFaint }}
+            />
+          );
+        }
         if (col.id === "outcome") {
           const val = row.outcome || "";
           return (
@@ -6900,118 +6937,112 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         );
       };
 
-const renderDetailField = (row, field) => {
-  const dateForRow = row.date;
-  if (field.id === "session") {
-    const val = row.session || "";
-    return (
-      <select
-        value={val}
-        onChange={(e) => updateJournalField(row.id, "session", e.target.value, dateForRow)}
-        className="w-full bg-transparent outline-none appearance-none"
-        style={{
-          ...detailFieldStyle,
-          color: val ? palette.text : palette.textFaint,
-          border: `1px solid ${palette.border}`,
-          borderRadius: "6px",
-          padding: "6px 8px",
-        }}
-      >
-        <option value="" style={{ background: palette.field, color: palette.textFaint }}>
-          Add session
-        </option>
-        {MARKET_SESSIONS.map((s) => (
-          <option key={s.id} value={s.id} style={{ background: palette.field, color: palette.text }}>
-            {s.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  if (field.id === "mood") {
-    const val = row.mood || "";
-    return (
-      <select
-        value={val}
-        onChange={(e) => updateJournalField(row.id, "mood", e.target.value, dateForRow)}
-        className="w-full bg-transparent outline-none appearance-none"
-        style={{
-          ...detailFieldStyle,
-          color: val ? palette.text : palette.textFaint,
-          border: `1px solid ${palette.border}`,
-          borderRadius: "6px",
-          padding: "6px 8px",
-        }}
-      >
-        <option value="" style={{ background: palette.field, color: palette.textFaint }}>
-          Add mood
-        </option>
-        {EMOTIONS.map((e) => (
-          <option key={e.id} value={e.id} style={{ background: palette.field, color: palette.text }}>
-            {e.emoji} {e.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  if (field.id === "confidence") {
-    const val = row.confidence || "";
-    return (
-      <select
-        value={val}
-        onChange={(e) => updateJournalField(row.id, "confidence", e.target.value, dateForRow)}
-        className="w-full bg-transparent outline-none appearance-none"
-        style={{
-          ...detailFieldStyle,
-          color: val ? palette.text : palette.textFaint,
-          border: `1px solid ${palette.border}`,
-          borderRadius: "6px",
-          padding: "6px 8px",
-        }}
-      >
-        <option value="" style={{ background: palette.field, color: palette.textFaint }}>
-          Add confidence
-        </option>
-        {CONFIDENCE_OPTIONS.map((c) => (
-          <option key={c.id} value={c.id} style={{ background: palette.field, color: palette.text }}>
-            {c.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  return (
-    <textarea
-      value={row[field.id] || ""}
-      onChange={(e) => {
-        updateJournalField(row.id, field.id, e.target.value, dateForRow);
-        autoResizeTextarea(e.target);
-      }}
-      ref={autoResizeTextarea}
-      placeholder={
-        field.id === "note"
-          ? "Add note"
-          : field.id === "mistake"
-          ? "Add mistake"
-          : `Add ${field.label.toLowerCase()}`
-      }
-      rows={1}
-      className="w-full bg-transparent outline-none block"
-      style={{
-        ...detailFieldStyle,
-        border: `1px solid ${palette.border}`,
-        borderRadius: "6px",
-        padding: "6px 8px",
-        resize: "none",
-        overflow: "hidden",
-        whiteSpace: "pre-wrap",
-        overflowWrap: "break-word",
-        wordBreak: "break-word",
-        lineHeight: "1.5",
-      }}
-    />
-  );
-};
+      const renderDetailField = (row, field) => {
+        const dateForRow = row.date;
+        if (field.id === "session") {
+          const val = row.session || "";
+          return (
+            <select
+              value={val}
+              onChange={(e) => updateJournalField(row.id, "session", e.target.value, dateForRow)}
+              className="w-full bg-transparent outline-none appearance-none"
+              style={{
+                ...detailFieldStyle,
+                color: val ? palette.text : palette.textFaint,
+                border: `1px solid ${palette.border}`,
+                borderRadius: "6px",
+                padding: "8px 10px",
+              }}
+            >
+              <option value="" style={{ background: palette.field, color: palette.textFaint }}>
+                Add session
+              </option>
+              {MARKET_SESSIONS.map((s) => (
+                <option key={s.id} value={s.id} style={{ background: palette.field, color: palette.text }}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          );
+        }
+        if (field.id === "mood") {
+          const val = row.mood || "";
+          return (
+            <select
+              value={val}
+              onChange={(e) => updateJournalField(row.id, "mood", e.target.value, dateForRow)}
+              className="w-full bg-transparent outline-none appearance-none"
+              style={{
+                ...detailFieldStyle,
+                color: val ? palette.text : palette.textFaint,
+                border: `1px solid ${palette.border}`,
+                borderRadius: "6px",
+                padding: "8px 10px",
+              }}
+            >
+              <option value="" style={{ background: palette.field, color: palette.textFaint }}>
+                Add mood
+              </option>
+              {EMOTIONS.map((e) => (
+                <option key={e.id} value={e.id} style={{ background: palette.field, color: palette.text }}>
+                  {e.emoji} {e.label}
+                </option>
+              ))}
+            </select>
+          );
+        }
+        if (field.id === "confidence") {
+          const val = row.confidence || "";
+          return (
+            <select
+              value={val}
+              onChange={(e) => updateJournalField(row.id, "confidence", e.target.value, dateForRow)}
+              className="w-full bg-transparent outline-none appearance-none"
+              style={{
+                ...detailFieldStyle,
+                color: val ? palette.text : palette.textFaint,
+                border: `1px solid ${palette.border}`,
+                borderRadius: "6px",
+                padding: "8px 10px",
+              }}
+            >
+              <option value="" style={{ background: palette.field, color: palette.textFaint }}>
+                Add confidence
+              </option>
+              {CONFIDENCE_OPTIONS.map((c) => (
+                <option key={c.id} value={c.id} style={{ background: palette.field, color: palette.text }}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          );
+        }
+        return (
+          <textarea
+            value={row[field.id] || ""}
+            onChange={(e) => {
+              updateJournalField(row.id, field.id, e.target.value, dateForRow);
+              autoResizeTextarea(e.target);
+            }}
+            ref={autoResizeTextarea}
+            placeholder={field.id === "note" ? "Add note" : "Add mistake"}
+            rows={1}
+            className="w-full bg-transparent outline-none block"
+            style={{
+              ...detailFieldStyle,
+              border: `1px solid ${palette.border}`,
+              borderRadius: "6px",
+              padding: "8px 10px",
+              resize: "none",
+              overflow: "hidden",
+              whiteSpace: "pre-wrap",
+              overflowWrap: "break-word",
+              wordBreak: "break-word",
+              lineHeight: "1.5",
+            }}
+          />
+        );
+      };
 
       body = (
         <>
@@ -7201,15 +7232,11 @@ const renderDetailField = (row, field) => {
                                   padding: "14px 16px",
                                 }}
                               >
-                                <div
-                                  style={{
-                                    position: "sticky",
-                                    left: 0,
-                                    width: "min(86vw, 300px)",
-                                  }}
-                                >
-                                  {JOURNAL_DETAIL_FIELDS.map((field) => (
-                                    <div key={field.id} className="mb-2">
+                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                  {JOURNAL_DETAIL_FIELDS.filter(
+                                    (f) => f.id === "session" || f.id === "mood" || f.id === "confidence"
+                                  ).map((field) => (
+                                    <div key={field.id}>
                                       <span
                                         className="block mb-1 uppercase"
                                         style={{ color: palette.textFaint, letterSpacing: "0.06em", fontSize: "10px" }}
@@ -7220,7 +7247,65 @@ const renderDetailField = (row, field) => {
                                     </div>
                                   ))}
                                 </div>
-                              </td>
+                                                               {JOURNAL_DETAIL_FIELDS.filter((f) => f.id === "mistake" || f.id === "note").map((field) => (
+                                  <div key={field.id} className="mb-3">
+                                    <span
+                                      className="block mb-1 uppercase"
+                                      style={{ color: palette.textFaint, letterSpacing: "0.06em", fontSize: "10px" }}
+                                    >
+                                      {field.label}
+                                    </span>
+                                    {renderDetailField(row, field)}
+                                  </div>
+                                ))}
+                              <div>
+                                <span
+                                  className="block mb-1 uppercase"
+                                  style={{ color: palette.textFaint, letterSpacing: "0.06em", fontSize: "10px" }}
+                                >
+                                  Trade Photos
+                                </span>
+                                <div className="flex gap-2 flex-wrap">
+                                  {(row.photos || []).map((src, idx) => (
+                                    <div key={idx} className="relative inline-block">
+                     <img
+                      src={src}
+                      alt={`Trade photo ${idx + 1}`}
+                      onClick={() => setViewingJournalPhoto({ src, rowId: row.id, index: idx })}
+                      className={`rounded-lg ${TAP}`}
+                      style={{ width: "80px", height: "80px", objectFit: "cover", border: `1px solid ${palette.border}`, cursor: "pointer" }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => setPendingJournalPhotoDelete({ rowId: row.id, index: idx })}
+                                        className={`absolute flex items-center justify-center rounded-full ${TAP}`}
+                                        style={{ top: "-5px", right: "-5px", width: "16px", height: "16px", background: palette.red, color: "#FFFFFF" }}
+                                        aria-label="Remove photo"
+                                      >
+                                        <X size={9} />
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {(row.photos || []).length < MAX_JOURNAL_PHOTOS_PER_ROW && (
+                 <button
+                  type="button"
+                  onClick={() => openJournalPhotoPicker(row.id)}
+                  disabled={journalPhotoSaving && journalPhotoTarget === row.id}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-lg ${TAP}`}
+                  style={{ width: "80px", height: "80px", background: "transparent", border: `1px dashed ${palette.border}`, color: palette.textFaint }}
+                                    >
+                                      <Camera size={14} />
+                                      <span style={{ fontSize: "9px", fontFamily: mono }}>
+                                        {journalPhotoSaving && journalPhotoTarget === row.id ? "Saving…" : "Add photo"}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                                {journalPhotoError && (
+                                  <p className="text-xs mt-1" style={{ color: palette.red }}>{journalPhotoError}</p>
+                                )}
+                              </div>
+                             </td>
                             </tr>
                           )}
                         </Fragment>
@@ -7301,6 +7386,15 @@ const renderDetailField = (row, field) => {
             onChange={importJournalCSV}
             style={{ display: "none" }}
           />
+
+          <input
+            ref={journalPhotoInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleJournalPhotoChange}
+            style={{ display: "none" }}
+          />
+
           {journalImportMsg && (
             <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
               {journalImportMsg}
@@ -7411,7 +7505,6 @@ const renderDetailField = (row, field) => {
             </p>
           ) : (
             visibleNotes.map((n) => {
-              const imgCount = noteImageCount(n.blocks);
               const preview = notePreview(n.blocks);
               return (
                 <div
@@ -7433,13 +7526,7 @@ const renderDetailField = (row, field) => {
                         style={{ color: palette.text, fontSize: "14px", fontWeight: 600, marginBottom: "3px" }}
                       >
                         <span className="truncate">{n.title || "Untitled Note"}</span>
-                        {imgCount > 0 && (
-                          <span className="flex items-center gap-0.5 flex-shrink-0" style={{ color: palette.textFaint }}>
-                            <ImageIcon size={11} />
-                            <span style={{ fontSize: "10px", fontFamily: mono }}>{imgCount}</span>
-                          </span>
-                        )}
-                      </div>
+                         </div>
                       {preview && (
                         <div style={{ color: palette.textMuted, fontSize: "12px", marginBottom: "3px" }}>
                           {preview}
@@ -7472,7 +7559,6 @@ const renderDetailField = (row, field) => {
       const wordWrap = activeNote.wordWrap !== false;
       const fontSize = activeNote.fontSize || DEFAULT_NOTEPAD_FONT_SIZE;
       const blocks = activeNote.blocks;
-      const imgCount = noteImageCount(blocks);
       const findMatches = notepadFindText ? countOccurrencesInBlocks(blocks, notepadFindText) : 0;
       const bodyText = blocksText(blocks);
 
@@ -7587,25 +7673,6 @@ const renderDetailField = (row, field) => {
 
             <button
               type="button"
-              onClick={openNoteImagePicker}
-              disabled={notepadImageSaving || imgCount >= NOTEPAD_MAX_IMAGES_PER_NOTE}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg ${TAP}`}
-              style={{
-                background: palette.field,
-                color: palette.textMuted,
-                border: `1px solid ${palette.border}`,
-                fontSize: "11px",
-                fontFamily: mono,
-                opacity: notepadImageSaving || imgCount >= NOTEPAD_MAX_IMAGES_PER_NOTE ? 0.5 : 1,
-              }}
-              title="Insert image at cursor"
-            >
-              <Camera size={13} />
-              {notepadImageSaving ? "Saving\u2026" : `Image (${imgCount}/${NOTEPAD_MAX_IMAGES_PER_NOTE})`}
-            </button>
-
-            <button
-              type="button"
               onClick={() => {
                 setNotepadFindOpen((v) => !v);
                 setNotepadMsg("");
@@ -7683,42 +7750,7 @@ const renderDetailField = (row, field) => {
             }}
           >
             {blocks.map((block, i) => {
-              if (block.type === "image") {
-                return (
-                  <div key={block.id} className="relative my-2" style={{ display: "inline-block", maxWidth: "100%" }}>
-                    <img
-                      src={block.src}
-                      alt="Note attachment"
-                      onClick={() => setViewingNoteImage({ src: block.src, noteId: activeNote.id, blockId: block.id })}
-                      className={TAP}
-                      style={{
-                        display: "block",
-                        maxWidth: "100%",
-                        maxHeight: "280px",
-                        borderRadius: "10px",
-                        border: `1px solid ${palette.border}`,
-                        cursor: "pointer",
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => requestDeleteNoteImage(activeNote.id, block.id)}
-                      className={`absolute flex items-center justify-center rounded-full ${TAP}`}
-                      style={{
-                        top: "-6px",
-                        right: "-6px",
-                        width: "20px",
-                        height: "20px",
-                        background: palette.red,
-                        color: "#FFFFFF",
-                      }}
-                      aria-label="Remove image"
-                    >
-                      <X size={12} />
-                    </button>
-                  </div>
-                );
-              }
+              if (block.type === "image") return null;
               return (
                 <textarea
                   key={block.id}
@@ -7763,12 +7795,6 @@ const renderDetailField = (row, field) => {
             </span>
           </div>
 
-          {notepadImageError && (
-            <p className="text-xs mb-2" style={{ color: palette.red }}>
-              {notepadImageError}
-            </p>
-          )}
-
           <button
             type="button"
             onClick={() => downloadNoteText(activeNote)}
@@ -7791,14 +7817,6 @@ const renderDetailField = (row, field) => {
               {notepadMsg}
             </p>
           )}
-
-          <input
-            ref={notepadImageInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleNoteImageChange}
-            style={{ display: "none" }}
-          />
         </>
       );
     }
@@ -8323,7 +8341,7 @@ const renderDetailField = (row, field) => {
           })}
 
           <p className="text-xs mt-2 mb-4" style={{ color: palette.textFaint }}>
-            Standard session hours in UTC: Asia 22:00–09:00, London 08:00–17:00,
+            Standard session hours in UTC: Sydney 22:00–07:00, Tokyo 00:00–09:00, London 08:00–17:00,
             New York 13:00–22:00. Shown here converted to your device's local time (
             {tzName || "detected automatically"}), not adjusted for daylight saving.
           </p>
@@ -8517,6 +8535,47 @@ const renderDetailField = (row, field) => {
         </div>
       )}
 
+        {viewingJournalPhoto && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-4"
+          style={{ background: "rgba(5,7,12,0.9)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+          onClick={() => setViewingJournalPhoto(null)}
+        >
+          <div className="w-full flex flex-col items-center modal-in" style={{ maxWidth: "480px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="w-full flex items-center justify-between mb-3">
+              <span style={{ color: "#EDEFF3", fontFamily: mono, fontSize: "13px" }}>Trade Photo</span>
+              <button type="button" onClick={() => setViewingJournalPhoto(null)} className={TAP} style={{ color: "#7C8AA0" }} aria-label="Close"><X size={20} /></button>
+            </div>
+            <img src={viewingJournalPhoto.src} alt="Trade photo" className="w-full rounded-2xl mb-3" style={{ border: `1px solid ${palette.border}` }} />
+            <button
+              type="button"
+              onClick={() => { setPendingJournalPhotoDelete({ rowId: viewingJournalPhoto.rowId, index: viewingJournalPhoto.index }); setViewingJournalPhoto(null); }}
+              className={`w-full flex items-center justify-center gap-2 rounded-lg py-3 ${TAP}`}
+              style={{ background: palette.red, color: "#FFFFFF", fontFamily: mono, fontSize: "14px", fontWeight: 600 }}
+            >
+              <Trash2 size={16} /> Delete Photo
+            </button>
+          </div>
+        </div>
+      )}
+
+       {pendingJournalPhotoDelete && (
+        <div
+          className="fixed inset-0 flex items-center justify-center z-50 p-6"
+          style={{ background: "rgba(5,7,12,0.85)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
+          onClick={() => setPendingJournalPhotoDelete(null)}
+        >
+          <div className="w-full modal-in rounded-2xl p-5" style={{ maxWidth: "300px", background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ color: palette.text, fontSize: "14px", fontWeight: 600, marginBottom: "6px" }}>Delete this photo?</div>
+            <p className="text-xs mb-4" style={{ color: palette.textMuted }}>This can't be undone.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setPendingJournalPhotoDelete(null)} className={`flex-1 rounded-lg py-2.5 ${TAP}`} style={{ background: "transparent", border: `1px solid ${palette.border}`, color: palette.textMuted, fontFamily: mono, fontSize: "13px" }}>Cancel</button>
+              <button type="button" onClick={() => { removeJournalPhoto(pendingJournalPhotoDelete.rowId, pendingJournalPhotoDelete.index); setPendingJournalPhotoDelete(null); }} className={`flex-1 rounded-lg py-2.5 ${TAP}`} style={{ background: palette.red, color: "#FFFFFF", fontFamily: mono, fontSize: "13px", fontWeight: 600 }}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewingScreenshot && (
         <div
           className="fixed inset-0 flex items-center justify-center z-50 p-4"
@@ -8653,75 +8712,6 @@ const renderDetailField = (row, field) => {
         </div>
       )}
 
-      {viewingNoteImage && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50 p-4"
-          style={{ background: "rgba(5,7,12,0.9)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-          onClick={() => setViewingNoteImage(null)}
-        >
-          <div
-            className="w-full flex flex-col items-center modal-in"
-            style={{ maxWidth: "480px" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="w-full flex items-center justify-between mb-3">
-              <span style={{ color: "#EDEFF3", fontFamily: mono, fontSize: "13px" }}>
-                Note Image
-              </span>
-              <button
-                type="button"
-                onClick={() => setViewingNoteImage(null)}
-                className={TAP}
-                style={{ color: "#7C8AA0" }}
-                aria-label="Close"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <img
-              src={viewingNoteImage.src}
-              alt="Note attachment"
-              className="w-full rounded-2xl mb-3"
-              style={{ border: `1px solid ${palette.border}` }}
-            />
-            <div className="flex gap-2 w-full">
-              <button
-                type="button"
-                onClick={() => {
-                  const note = notepadNotes.find((n) => n.id === viewingNoteImage.noteId);
-                  downloadNoteImage(viewingNoteImage.src, note || {}, viewingNoteImage.blockId);
-                }}
-                className={`flex-1 flex items-center justify-center gap-2 rounded-lg py-3 ${TAP}`}
-                style={{
-                  background: palette.gold,
-                  color: palette.letterbox,
-                  fontFamily: mono,
-                  fontSize: "14px",
-                  fontWeight: 600,
-                }}
-              >
-                <Download size={16} />
-                Download
-              </button>
-              <button
-                type="button"
-                onClick={() => requestDeleteNoteImage(viewingNoteImage.noteId, viewingNoteImage.blockId)}
-                className={`flex items-center justify-center rounded-lg py-3 px-4 ${TAP}`}
-                style={{
-                  background: "transparent",
-                  border: "1px solid rgba(255,255,255,0.2)",
-                  color: "#EDEFF3",
-                }}
-                aria-label="Delete image"
-                title="Delete"
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {pendingNoteDelete && (
         <div
           className="fixed inset-0 flex items-center justify-center z-50 p-6"
@@ -8758,58 +8748,6 @@ const renderDetailField = (row, field) => {
               <button
                 type="button"
                 onClick={confirmDeleteNote}
-                className={`flex-1 rounded-lg py-2.5 ${TAP}`}
-                style={{
-                  background: palette.red,
-                  color: "#FFFFFF",
-                  fontFamily: mono,
-                  fontSize: "13px",
-                  fontWeight: 600,
-                }}
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {pendingNoteImageDelete && (
-        <div
-          className="fixed inset-0 flex items-center justify-center z-50 p-6"
-          style={{ background: "rgba(5,7,12,0.85)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)" }}
-          onClick={cancelDeleteNoteImage}
-        >
-          <div
-            className="w-full modal-in rounded-2xl p-5"
-            style={{ maxWidth: "300px", background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ color: palette.text, fontSize: "14px", fontWeight: 600, marginBottom: "6px", transition: THEME_TRANSITION }}>
-              Delete this image?
-            </div>
-            <p className="text-xs mb-4" style={{ color: palette.textMuted, transition: THEME_TRANSITION }}>
-              This can't be undone.
-            </p>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={cancelDeleteNoteImage}
-                className={`flex-1 rounded-lg py-2.5 ${TAP}`}
-                style={{
-                  background: "transparent",
-                  border: `1px solid ${palette.border}`,
-                  color: palette.textMuted,
-                  fontFamily: mono,
-                  fontSize: "13px",
-                  transition: THEME_TRANSITION,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={confirmDeleteNoteImage}
                 className={`flex-1 rounded-lg py-2.5 ${TAP}`}
                 style={{
                   background: palette.red,
