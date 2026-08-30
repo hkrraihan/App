@@ -5158,7 +5158,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     const patternDetected =
   (mistakePatterns.worstTrends[0]?.mistakeRate ?? 0) >= 30 ||
   (mistakePatterns.worstWeekdays[0]?.mistakeRate ?? 0) >= 30;
-    const closestWeekday = [...mistakePatterns.weekdayRows].sort(
+const closestWeekday = [...mistakePatterns.weekdayRows].sort(
   (a, b) => b.mistakeRate - a.mistakeRate
 )[0];
     const combinedMistakeRows = [
@@ -6301,7 +6301,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             <>
               {joinWithAnd(mistakePatterns.worstWeekdays.map((w) => `${w.fullLabel}s`))}{" "}
               {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day
-              {mistakePatterns.worstWeekdays.length > 1 ? "s" : ""} — {mistakePatterns.worstWeekdays[0].mistakeRate}% of entries flagged.
+              {mistakePatterns.worstWeekdays.length > 1 ? "s" : ""}.
             </>
           )}
         </div>
