@@ -1,0 +1,19 @@
+{
+  "name": "Ledger",
+  "short_name": "Ledger",
+  "description": "Trade math calculator, journal, and trading tools.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#05070C",
+  "theme_color": "#0A0E16",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
