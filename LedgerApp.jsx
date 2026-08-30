@@ -1326,7 +1326,6 @@ function journalSetupRadar(rows, customSetups) {
 
 function journalMistakePatterns(rows) {
   const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const MIN_SAMPLE = 3; // need at least this many entries before a rate means anything
 
   const byTrend = {};
   TREND_OPTIONS.forEach((t) => (byTrend[t.id] = { count: 0, mistakeCount: 0 }));
@@ -1371,14 +1370,11 @@ function journalMistakePatterns(rows) {
     })
     .filter((r) => r.count > 0);
 
-  const significantTrend = trendRows.filter((r) => r.count >= MIN_SAMPLE);
-  const significantWeekday = weekdayRows.filter((r) => r.count >= MIN_SAMPLE);
+  const maxTrendRate = trendRows.length ? Math.max(...trendRows.map((r) => r.mistakeRate)) : 0;
+  const worstTrends = trendRows.filter((r) => r.mistakeRate === maxTrendRate && maxTrendRate > 0);
 
-  const maxTrendRate = significantTrend.length ? Math.max(...significantTrend.map((r) => r.mistakeRate)) : 0;
-  const worstTrends = significantTrend.filter((r) => r.mistakeRate === maxTrendRate && maxTrendRate > 0);
-
-  const maxWeekdayRate = significantWeekday.length ? Math.max(...significantWeekday.map((r) => r.mistakeRate)) : 0;
-  const worstWeekdays = significantWeekday.filter((r) => r.mistakeRate === maxWeekdayRate && maxWeekdayRate > 0);
+  const maxWeekdayRate = weekdayRows.length ? Math.max(...weekdayRows.map((r) => r.mistakeRate)) : 0;
+  const worstWeekdays = weekdayRows.filter((r) => r.mistakeRate === maxWeekdayRate && maxWeekdayRate > 0);
 
   return { trendRows, weekdayRows, worstTrends, worstWeekdays };
 }
@@ -6267,8 +6263,6 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             </div>
           </>
         )}
-<div style={{color: 'white'}}>DEBUG: combinedMistakeRows={combinedMistakeRows.length}, patternDetected={String(patternDetected)}, closestWeekday={JSON.stringify(closestWeekday)}</div>
-
 {combinedMistakeRows.length > 0 && (
   <>
     {patternDetected ? (
