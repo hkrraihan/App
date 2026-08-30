@@ -6268,15 +6268,6 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
           </>
         )}
 
-const patternDetected =
-  (mistakePatterns.worstTrends[0]?.mistakeRate ?? 0) >= 30 ||
-  (mistakePatterns.worstWeekdays[0]?.mistakeRate ?? 0) >= 30;
-
-// closest weekday even if it hasn't cleared the sample/rate bar yet
-const closestWeekday = [...mistakePatterns.weekdayRows].sort(
-  (a, b) => b.mistakeRate - a.mistakeRate
-)[0];
-
 {combinedMistakeRows.length > 0 && (
   <>
     {patternDetected ? (
