@@ -24,7 +24,6 @@ import {
   Legend,
 } from "recharts";
 
-//if you steal this file i hopw you have a brutal death- Raihan
 // --- localStorage shim for window.storage (drop-in replacement) ---
 if (typeof window !== "undefined" && !window.storage) {
   window.storage = {
@@ -3228,7 +3227,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
   const exportBackup = () => {
     setBackupMsg("");
     const payload = {
-      version: 1,
+      version: 3.1,
       exportedAt: new Date().toISOString(),
       startingBalance,
       trades,
@@ -6782,8 +6781,8 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       const totalTableWidth =
         JOURNAL_TOGGLE_COL_WIDTH + JOURNAL_COLUMNS.reduce((s, c) => s + journalColWidths[c.id], 0) + 36;
 
-      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "10px", border: "none" };
-      const detailFieldStyle = { color: palette.text, fontFamily: mono, fontSize: "10px", border: "none" };
+      const cellInputStyle = { color: palette.text, fontFamily: mono, fontSize: "12px", border: "none" };
+      const detailFieldStyle = { color: palette.text, fontFamily: mono, fontSize: "12px", border: "none" };
 
       const autoResizeTextarea = (el) => {
         if (!el) return;
