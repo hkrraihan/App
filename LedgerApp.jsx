@@ -1326,6 +1326,7 @@ function journalSetupRadar(rows, customSetups) {
 
 function journalMistakePatterns(rows) {
   const WEEKDAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const MIN_SAMPLE = 3; // need at least this many entries before a rate means anything
 
   const byTrend = {};
   TREND_OPTIONS.forEach((t) => (byTrend[t.id] = { count: 0, mistakeCount: 0 }));
@@ -1367,10 +1368,16 @@ function journalMistakePatterns(rows) {
     })
     .filter((r) => r.count > 0);
 
-  const worstTrend = trendRows.length ? [...trendRows].sort((a, b) => b.mistakeRate - a.mistakeRate)[0] : null;
-  const worstWeekday = weekdayRows.length ? [...weekdayRows].sort((a, b) => b.mistakeRate - a.mistakeRate)[0] : null;
+  const significantTrend = trendRows.filter((r) => r.count >= MIN_SAMPLE);
+  const significantWeekday = weekdayRows.filter((r) => r.count >= MIN_SAMPLE);
 
-  return { trendRows, weekdayRows, worstTrend, worstWeekday };
+  const maxTrendRate = significantTrend.length ? Math.max(...significantTrend.map((r) => r.mistakeRate)) : 0;
+  const worstTrends = significantTrend.filter((r) => r.mistakeRate === maxTrendRate && maxTrendRate > 0);
+
+  const maxWeekdayRate = significantWeekday.length ? Math.max(...significantWeekday.map((r) => r.mistakeRate)) : 0;
+  const worstWeekdays = significantWeekday.filter((r) => r.mistakeRate === maxWeekdayRate && maxWeekdayRate > 0);
+
+  return { trendRows, weekdayRows, worstTrends, worstWeekdays };
 }
 
 function journalPairFrequency(rows, max = 8) {
@@ -1395,6 +1402,13 @@ function journalWeekdayFrequency(rows) {
     counts[wd] = (counts[wd] || 0) + 1;
   });
   return WEEKDAY_SHORT.map((label, i) => ({ id: i, label, count: counts[i] || 0 }));
+}
+
+function journalSessionFrequency(rows) {
+  return MARKET_SESSIONS.map((s) => {
+    const count = rows.filter((r) => r.session === s.id).length;
+    return { id: s.id, label: s.label, count, color: s.color };
+  }).filter((r) => r.count > 0);
 }
 
 function journalRRDistribution(rows) {
@@ -1455,6 +1469,21 @@ function journalPnLByDay(rows, year, month) {
     byDay[d] = (byDay[d] || 0) + pnl;
   });
   return byDay;
+}
+
+function journalMonthlyPnLSeries(pnlByMonth) {
+  return MONTH_SHORT.map((label, i) => ({ label, pnl: pnlByMonth[i + 1] || 0 }));
+}
+
+function journalDailyPnLSeries(pnlByDay, daysInMonth) {
+  return Array.from({ length: daysInMonth }, (_, i) => ({ label: String(i + 1), pnl: pnlByDay[i + 1] || 0 }));
+}
+
+function joinWithAnd(arr) {
+  if (arr.length === 0) return "";
+  if (arr.length === 1) return arr[0];
+  if (arr.length === 2) return `${arr[0]} and ${arr[1]}`;
+  return `${arr.slice(0, -1).join(", ")}, and ${arr[arr.length - 1]}`;
 }
 
 function journalSessionByDay(rows, maxDays = 30) {
@@ -2412,6 +2441,32 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       return;
     }
     const newRow = { id, date: dateForRow, pair: "", trend: "", rr: "", setup: "", mistake: "", note: "", [field]: value };
+    persistJournalEntries([...journalEntries, newRow]);
+  };
+
+  const updateJournalPnl = (id, value, dateForRow) => {
+    const n = parseFloat(value);
+    const patch = { pnl: value };
+    if (value !== "" && Number.isFinite(n) && n !== 0) {
+      patch.outcome = n > 0 ? "win" : "loss";
+    }
+    const exists = journalEntries.some((r) => r.id === id);
+    if (exists) {
+      persistJournalEntries(journalEntries.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+      return;
+    }
+    const newRow = {
+      id,
+      date: dateForRow,
+      pair: "",
+      trend: "",
+      rr: "",
+      setup: "",
+      outcome: "",
+      mistake: "",
+      note: "",
+      ...patch,
+    };
     persistJournalEntries([...journalEntries, newRow]);
   };
 
@@ -5730,7 +5785,34 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                     );
                   })}
                 </div>
-                <p className="text-xs mb-6" style={{ color: palette.textFaint }}>Tap a coloured month to see its daily breakdown.</p>
+                <p className="text-xs mb-4" style={{ color: palette.textFaint }}>Tap a coloured month to see its daily breakdown.</p>
+
+                <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
+                  PnL by Month
+                </span>
+                <div className="rounded-2xl p-4 mb-6" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
+                  <div style={{ width: "100%", height: 180 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={journalMonthlyPnLSeries(pnlByMonth)} margin={{ top: 6, right: 8, bottom: 0, left: 0 }} barCategoryGap="30%">
+                        <CartesianGrid stroke={palette.border} strokeDasharray="3 3" vertical={false} />
+                        <XAxis dataKey="label" stroke={palette.textFaint} tick={{ fill: palette.textFaint, fontSize: 10, fontFamily: mono }} tickLine={false} axisLine={{ stroke: palette.border }} />
+                        <YAxis stroke={palette.textFaint} tick={{ fill: palette.textFaint, fontSize: 10, fontFamily: mono }} tickLine={false} axisLine={{ stroke: palette.border }} width={48} />
+                        <ReferenceLine y={0} stroke={palette.textFaint} />
+                        <Tooltip
+                          cursor={false}
+                          contentStyle={{ background: palette.field, border: `1px solid ${palette.border}`, borderRadius: "8px", fontFamily: mono, fontSize: "12px" }}
+                          labelStyle={{ color: palette.textMuted }}
+                          formatter={(v) => [`${v >= 0 ? "+" : ""}$${fmtMoney(v)}`, "PnL"]}
+                        />
+                        <Bar dataKey="pnl" radius={[5, 5, 5, 5]} barSize={16} activeBar={false}>
+                          {journalMonthlyPnLSeries(pnlByMonth).map((d, i) => (
+                            <Cell key={i} fill={d.pnl >= 0 ? palette.green : palette.red} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
               </>
             );
           }
@@ -5762,6 +5844,41 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                     </div>
                   );
                 })}
+              </div>
+
+              <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
+                PnL by Day — {MONTH_NAMES[journalInsightMonth - 1]}
+              </span>
+              <div className="rounded-2xl p-4 mb-6" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
+                <div style={{ width: "100%", height: 180 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={journalDailyPnLSeries(pnlByDay, daysInMonth)} margin={{ top: 6, right: 8, bottom: 0, left: 0 }} barCategoryGap="25%">
+                      <CartesianGrid stroke={palette.border} strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="label"
+                        stroke={palette.textFaint}
+                        tick={{ fill: palette.textFaint, fontSize: 9, fontFamily: mono }}
+                        tickLine={false}
+                        axisLine={{ stroke: palette.border }}
+                        interval={Math.ceil(daysInMonth / 10)}
+                      />
+                      <YAxis stroke={palette.textFaint} tick={{ fill: palette.textFaint, fontSize: 10, fontFamily: mono }} tickLine={false} axisLine={{ stroke: palette.border }} width={48} />
+                      <ReferenceLine y={0} stroke={palette.textFaint} />
+                      <Tooltip
+                        cursor={false}
+                        contentStyle={{ background: palette.field, border: `1px solid ${palette.border}`, borderRadius: "8px", fontFamily: mono, fontSize: "12px" }}
+                        labelStyle={{ color: palette.textMuted }}
+                        formatter={(v) => [`${v >= 0 ? "+" : ""}$${fmtMoney(v)}`, "PnL"]}
+                        labelFormatter={(l) => `${MONTH_SHORT[journalInsightMonth - 1]} ${l}`}
+                      />
+                      <Bar dataKey="pnl" radius={[3, 3, 3, 3]} barSize={8} activeBar={false}>
+                        {journalDailyPnLSeries(pnlByDay, daysInMonth).map((d, i) => (
+                          <Cell key={i} fill={d.pnl >= 0 ? palette.green : palette.red} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </>
           );
@@ -5909,6 +6026,51 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             </p>
           </>
         )}
+
+ {(() => {
+  const sessionFreq = journalSessionFrequency(journalRows);
+  if (sessionFreq.length === 0) return null;
+  return (
+    <>
+      <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
+        Entries by Session
+      </span>
+      <div className="rounded-2xl p-4 mb-6" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
+        <div style={{ width: "100%", height: Math.max(140, sessionFreq.length * 46) }}>
+          <ResponsiveContainer>
+            <BarChart data={sessionFreq} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="35%">
+              <CartesianGrid stroke={palette.border} strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" hide allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="label"
+                width={90}
+                stroke={palette.textFaint}
+                tick={{ fill: palette.text, fontSize: 12, fontFamily: mono, fontWeight: 600 }}
+                tickLine={false}
+                axisLine={{ stroke: palette.border }}
+              />
+              <Tooltip
+                cursor={false}
+                contentStyle={{ background: palette.field, border: `1px solid ${palette.border}`, borderRadius: "8px", fontFamily: mono, fontSize: "12px" }}
+                labelStyle={{ color: palette.textMuted }}
+                formatter={(v) => [`${v}`, "Entries"]}
+              />
+              <Bar dataKey="count" radius={[0, 8, 8, 0]} barSize={24} activeBar={false}>
+                {sessionFreq.map((r) => (
+                  <Cell key={r.id} fill={r.color} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      <p className="text-xs mb-6" style={{ color: palette.textFaint }}>
+        Total journaled entries per trading session, colour-matched to the session timeline on the Sessions tab.
+      </p>
+    </>
+  );
+})()}
 
         {confidenceByDay.length > 1 && (
           <>
@@ -6126,29 +6288,37 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           </>
         )}
 
-        {combinedMistakeRows.length > 0 && (
-          <>
-            {(mistakePatterns.worstTrend?.mistakeRate >= 30 || mistakePatterns.worstWeekday?.mistakeRate >= 30) && (
-              <div
-                className="rounded-2xl p-4 mb-6"
-                style={{ background: palette.surface, border: `1px solid ${palette.red}`, boxShadow: palette.shadow }}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <Lightbulb size={14} style={{ color: palette.red }} />
-                  <span className="uppercase" style={{ color: palette.red, letterSpacing: "0.08em", fontSize: "10px" }}>
-                    Pattern Detected
-                  </span>
-                </div>
-                <div style={{ color: palette.text, fontSize: "13px" }}>
-                  {mistakePatterns.worstTrend && mistakePatterns.worstTrend.mistakeRate >= 30 && (
-                    <>You log a mistake {mistakePatterns.worstTrend.mistakeRate}% of the time in {mistakePatterns.worstTrend.label.toLowerCase()} conditions. </>
-                  )}
-                  {mistakePatterns.worstWeekday && mistakePatterns.worstWeekday.mistakeRate >= 30 && (
-                    <>{mistakePatterns.worstWeekday.label}s are your worst day, {mistakePatterns.worstWeekday.mistakeRate}% of entries flagged.</>
-                  )}
-                </div>
-              </div>
-            )}
+{combinedMistakeRows.length > 0 && (
+  <>
+    {((mistakePatterns.worstTrends[0]?.mistakeRate >= 30) || (mistakePatterns.worstWeekdays[0]?.mistakeRate >= 30)) && (
+      <div
+        className="rounded-2xl p-4 mb-6"
+        style={{ background: palette.surface, border: `1px solid ${palette.red}`, boxShadow: palette.shadow }}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <Lightbulb size={14} style={{ color: palette.red }} />
+          <span className="uppercase" style={{ color: palette.red, letterSpacing: "0.08em", fontSize: "10px" }}>
+            Pattern Detected
+          </span>
+        </div>
+        <div style={{ color: palette.text, fontSize: "13px" }}>
+          {mistakePatterns.worstTrends.length > 0 && mistakePatterns.worstTrends[0].mistakeRate >= 30 && (
+            <>
+              You log a mistake {mistakePatterns.worstTrends[0].mistakeRate}% of the time in{" "}
+              {joinWithAnd(mistakePatterns.worstTrends.map((t) => t.label.toLowerCase()))} conditions.{" "}
+            </>
+          )}
+          {mistakePatterns.worstWeekdays.length > 0 && mistakePatterns.worstWeekdays[0].mistakeRate >= 30 && (
+            <>
+              {joinWithAnd(mistakePatterns.worstWeekdays.map((w) => `${w.label}s`))}{" "}
+              {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day
+              {mistakePatterns.worstWeekdays.length > 1 ? "s" : ""}, {mistakePatterns.worstWeekdays[0].mistakeRate}% of
+              entries flagged.
+            </>
+          )}
+        </div>
+      </div>
+    )}
 
             <span
               className="block mb-1.5 uppercase"
@@ -6890,13 +7060,14 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
               ref={registerRef}
               onKeyDown={onCellKeyDown}
               value={val}
-              onChange={(e) => updateJournalField(row.id, "pnl", e.target.value, dateForRow)}
+              onChange={(e) => updateJournalPnl(row.id, e.target.value, dateForRow)}
               placeholder="PnL"
               className="w-full bg-transparent outline-none"
               style={{ ...cellInputStyle, color: hasVal ? (n >= 0 ? palette.green : palette.red) : palette.textFaint }}
             />
           );
         }
+
         if (col.id === "outcome") {
           const val = row.outcome || "";
           return (
@@ -6940,20 +7111,25 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
       const renderDetailField = (row, field) => {
         const dateForRow = row.date;
+
+        const selectStyle = {
+          ...detailFieldStyle,
+          border: `1px solid ${palette.border}`,
+          borderRadius: "6px",
+          padding: "5px 10px",
+          width: "auto",
+          minWidth: "120px",
+          display: "inline-block",
+        };
+
         if (field.id === "session") {
           const val = row.session || "";
           return (
             <select
               value={val}
               onChange={(e) => updateJournalField(row.id, "session", e.target.value, dateForRow)}
-              className="w-full bg-transparent outline-none appearance-none"
-              style={{
-                ...detailFieldStyle,
-                color: val ? palette.text : palette.textFaint,
-                border: `1px solid ${palette.border}`,
-                borderRadius: "6px",
-                padding: "5px 8px",
-              }}
+              className="bg-transparent outline-none appearance-none"
+              style={{ ...selectStyle, color: val ? palette.text : palette.textFaint }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
                 Add session
@@ -6972,14 +7148,8 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             <select
               value={val}
               onChange={(e) => updateJournalField(row.id, "mood", e.target.value, dateForRow)}
-              className="w-full bg-transparent outline-none appearance-none"
-              style={{
-                ...detailFieldStyle,
-                color: val ? palette.text : palette.textFaint,
-                border: `1px solid ${palette.border}`,
-                borderRadius: "6px",
-                padding: "5px 8px",
-              }}
+              className="bg-transparent outline-none appearance-none"
+              style={{ ...selectStyle, color: val ? palette.text : palette.textFaint }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
                 Add mood
@@ -6998,14 +7168,8 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             <select
               value={val}
               onChange={(e) => updateJournalField(row.id, "confidence", e.target.value, dateForRow)}
-              className="w-full bg-transparent outline-none appearance-none"
-              style={{
-                ...detailFieldStyle,
-                color: val ? palette.text : palette.textFaint,
-                border: `1px solid ${palette.border}`,
-                borderRadius: "6px",
-                padding: "5px 8px",
-              }}
+              className="bg-transparent outline-none appearance-none"
+              style={{ ...selectStyle, color: val ? palette.text : palette.textFaint }}
             >
               <option value="" style={{ background: palette.field, color: palette.textFaint }}>
                 Add confidence
@@ -7018,26 +7182,37 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             </select>
           );
         }
+
+        // Mistake / Note — auto-growing textarea, no reserved blank space
         return (
           <textarea
             value={row[field.id] || ""}
-            onChange={(e) => updateJournalField(row.id, field.id, e.target.value, dateForRow)}
+            onChange={(e) => {
+              updateJournalField(row.id, field.id, e.target.value, dateForRow);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
+            ref={(el) => {
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = `${el.scrollHeight}px`;
+              }
+            }}
             placeholder={field.id === "note" ? "Add note" : "Add mistake"}
-            rows={3}
+            rows={1}
             className="w-full bg-transparent outline-none block"
             style={{
               ...detailFieldStyle,
               border: `1px solid ${palette.border}`,
               borderRadius: "6px",
-              padding: "5px 8px",
-              resize: "vertical",
-              overflow: "auto",
+              padding: "6px 10px",
+              resize: "none",
+              overflow: "hidden",
               whiteSpace: "pre-wrap",
               overflowWrap: "break-word",
               wordBreak: "break-word",
               lineHeight: "1.5",
-              minHeight: "58px",
-              maxHeight: "130px",
+              minHeight: "34px",
             }}
           />
         );
@@ -7231,7 +7406,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                                   padding: "10px 12px",
                                 }}
                               >
-                                <div className="grid grid-cols-2 gap-3 mb-3">
+                                <div className="grid grid-cols-3 gap-2 mb-3">
                                   {JOURNAL_DETAIL_FIELDS.filter(
                                     (f) => f.id === "session" || f.id === "mood" || f.id === "confidence"
                                   ).map((field) => (
