@@ -8553,10 +8553,12 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
         transition: `opacity 0.15s ease-out, ${THEME_TRANSITION}`,
       }}
     >
-      <style>{`
-        @media (prefers-reduced-motion: no-preference) {
-          .ticker-glow { animation: pulse 3.2s ease-in-out infinite; }
-        }
+<style>{`
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ticker-glow { animation: pulse 3.2s ease-in-out infinite; }
+  }
         @keyframes pulse {
           0%, 100% { filter: drop-shadow(0 0 0px rgba(0,0,0,0)); }
           50% { filter: drop-shadow(0 0 8px var(--glow, rgba(231,198,135,0.28))); }
