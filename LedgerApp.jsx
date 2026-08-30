@@ -1356,12 +1356,15 @@ function journalMistakePatterns(rows) {
     };
   }).filter((r) => r.count > 0);
 
+  const WEEKDAY_FULL_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
   const weekdayRows = Object.keys(byWeekday)
     .map((k) => {
       const b = byWeekday[k];
       return {
         id: k,
         label: WEEKDAY_SHORT[Number(k)],
+        fullLabel: WEEKDAY_FULL_NAMES[Number(k)],
         count: b.count,
         mistakeRate: b.count ? Math.round((b.mistakeCount / b.count) * 100) : 0,
       };
@@ -5959,114 +5962,85 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           </>
         )}
 
-        {sessionByDay.length > 0 && (
-          <>
-            <span
-              className="block mb-1.5 uppercase"
-              style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
-            >
-              Session Activity by Day
-            </span>
-            <div
-              className="rounded-2xl p-4 mb-6"
-              style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}
-            >
-              <div style={{ width: "100%", height: 200 }}>
-                <ResponsiveContainer>
-                  <AreaChart data={sessionByDay} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
-                    <CartesianGrid stroke={palette.border} strokeDasharray="3 3" vertical={false} />
-                    <XAxis
-                      dataKey="label"
-                      stroke={palette.textFaint}
-                      tick={{ fill: palette.textFaint, fontSize: 9, fontFamily: mono }}
-                      tickLine={false}
-                      axisLine={{ stroke: palette.border }}
-                      minTickGap={20}
-                    />
-                    <YAxis
-                      stroke={palette.textFaint}
-                      tick={{ fill: palette.textFaint, fontSize: 10, fontFamily: mono }}
-                      tickLine={false}
-                      axisLine={{ stroke: palette.border }}
-                      width={28}
-                      allowDecimals={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        background: palette.field,
-                        border: `1px solid ${palette.border}`,
-                        borderRadius: "8px",
-                        fontFamily: mono,
-                        fontSize: "12px",
-                      }}
-                      labelStyle={{ color: palette.textMuted }}
-                    />
-                    <Legend
-                      wrapperStyle={{ fontFamily: mono, fontSize: "10px", color: palette.textMuted }}
-                      formatter={(v) => <span style={{ color: palette.textMuted }}>{v}</span>}
-                    />
-                    {MARKET_SESSIONS.map((s) => (
-                      <Area
-                        key={s.id}
-                        type="monotone"
-                        dataKey={s.label}
-                        stackId="1"
-                        stroke={s.color}
-                        fill={s.color}
-                        fillOpacity={0.55}
-                      />
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <p className="text-xs mb-6" style={{ color: palette.textFaint }}>
-              Which session you journaled trades in, day by day \u2014 helps spot whether certain sessions get
-              logged more (or less) consistently.
-            </p>
-          </>
-        )}
-
- {(() => {
+{sessionByDay.length > 0 && (() => {
   const sessionFreq = journalSessionFrequency(journalRows);
-  if (sessionFreq.length === 0) return null;
+  const totalEntries = sessionFreq.reduce((sum, s) => sum + s.count, 0);
   return (
     <>
       <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
-        Entries by Session
+        Session Breakdown
       </span>
-      <div className="rounded-2xl p-4 mb-6" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
-        <div style={{ width: "100%", height: Math.max(140, sessionFreq.length * 46) }}>
+      <div className="rounded-2xl p-4 mb-2" style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}>
+        <div style={{ width: "100%", height: 180 }}>
           <ResponsiveContainer>
-            <BarChart data={sessionFreq} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 4 }} barCategoryGap="35%">
-              <CartesianGrid stroke={palette.border} strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" hide allowDecimals={false} />
-              <YAxis
-                type="category"
+            <BarChart data={sessionByDay} margin={{ top: 6, right: 8, bottom: 0, left: 0 }} barCategoryGap="22%">
+              <CartesianGrid stroke={palette.border} strokeDasharray="3 3" vertical={false} />
+              <XAxis
                 dataKey="label"
-                width={90}
                 stroke={palette.textFaint}
-                tick={{ fill: palette.text, fontSize: 12, fontFamily: mono, fontWeight: 600 }}
+                tick={{ fill: palette.textFaint, fontSize: 9, fontFamily: mono }}
                 tickLine={false}
                 axisLine={{ stroke: palette.border }}
+                minTickGap={20}
+              />
+              <YAxis
+                stroke={palette.textFaint}
+                tick={{ fill: palette.textFaint, fontSize: 10, fontFamily: mono }}
+                tickLine={false}
+                axisLine={{ stroke: palette.border }}
+                width={28}
+                allowDecimals={false}
               />
               <Tooltip
-                cursor={false}
+                cursor={{ fill: `${palette.gold}10` }}
                 contentStyle={{ background: palette.field, border: `1px solid ${palette.border}`, borderRadius: "8px", fontFamily: mono, fontSize: "12px" }}
                 labelStyle={{ color: palette.textMuted }}
-                formatter={(v) => [`${v}`, "Entries"]}
               />
-              <Bar dataKey="count" radius={[0, 8, 8, 0]} barSize={24} activeBar={false}>
-                {sessionFreq.map((r) => (
-                  <Cell key={r.id} fill={r.color} />
-                ))}
-              </Bar>
+              {MARKET_SESSIONS.map((s, idx) => (
+                <Bar
+                  key={s.id}
+                  dataKey={s.label}
+                  stackId="a"
+                  fill={s.color}
+                  radius={idx === MARKET_SESSIONS.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]}
+                />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
+
+        {sessionFreq.length > 0 && (
+          <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${palette.border}` }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="uppercase" style={{ color: palette.textFaint, fontSize: "10px", letterSpacing: "0.07em" }}>Session</span>
+              <span className="uppercase" style={{ color: palette.textFaint, fontSize: "10px", letterSpacing: "0.07em" }}>Total</span>
+            </div>
+            {sessionFreq.map((s) => (
+              <div key={s.id} className="flex items-center gap-2 mb-1.5">
+                <span style={{ width: "64px", fontSize: "11px", fontFamily: mono, color: s.color, fontWeight: 600, flexShrink: 0 }}>
+                  {s.label}
+                </span>
+                <div className="flex-1" style={{ height: "5px", borderRadius: "999px", background: palette.field, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${totalEntries ? (s.count / totalEntries) * 100 : 0}%`,
+                      background: s.color,
+                      borderRadius: "999px",
+                      transition: "width 0.4s ease",
+                    }}
+                  />
+                </div>
+                <span style={{ fontFamily: mono, fontSize: "11px", color: palette.textMuted, flexShrink: 0, minWidth: "28px", textAlign: "right" }}>
+                  {s.count}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       <p className="text-xs mb-6" style={{ color: palette.textFaint }}>
-        Total journaled entries per trading session, colour-matched to the session timeline on the Sessions tab.
+        Daily entries stacked by session — bars show when you're most active. Progress strips show each session's share of all logged entries.
       </p>
     </>
   );
@@ -6308,12 +6282,10 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
               {joinWithAnd(mistakePatterns.worstTrends.map((t) => t.label.toLowerCase()))} conditions.{" "}
             </>
           )}
-          {mistakePatterns.worstWeekdays.length > 0 && mistakePatterns.worstWeekdays[0].mistakeRate >= 30 && (
+      {mistakePatterns.worstWeekdays.length > 0 && mistakePatterns.worstWeekdays[0].mistakeRate >= 30 && (
             <>
-              {joinWithAnd(mistakePatterns.worstWeekdays.map((w) => `${w.label}s`))}{" "}
-              {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day
-              {mistakePatterns.worstWeekdays.length > 1 ? "s" : ""}, {mistakePatterns.worstWeekdays[0].mistakeRate}% of
-              entries flagged.
+              {joinWithAnd(mistakePatterns.worstWeekdays.map((w) => `${w.fullLabel}s`))}{" "}
+              {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day{mistakePatterns.worstWeekdays.length > 1 ? "s" : ""} — {mistakePatterns.worstWeekdays[0].mistakeRate}% of entries flagged.
             </>
           )}
         </div>
@@ -7116,10 +7088,9 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           ...detailFieldStyle,
           border: `1px solid ${palette.border}`,
           borderRadius: "6px",
-          padding: "5px 10px",
-          width: "auto",
-          minWidth: "120px",
-          display: "inline-block",
+          padding: "4px 8px",
+          width: "100%",
+          display: "block",
         };
 
         if (field.id === "session") {
@@ -7406,7 +7377,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                                   padding: "10px 12px",
                                 }}
                               >
-                                <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="grid grid-cols-3 gap-1.5 mb-2">
                                   {JOURNAL_DETAIL_FIELDS.filter(
                                     (f) => f.id === "session" || f.id === "mood" || f.id === "confidence"
                                   ).map((field) => (
