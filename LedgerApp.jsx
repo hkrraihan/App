@@ -24,6 +24,7 @@ import {
   Legend,
 } from "recharts";
 
+//if you steal this file i hopw you have a brutal death- Raihan
 // --- localStorage shim for window.storage (drop-in replacement) ---
 if (typeof window !== "undefined" && !window.storage) {
   window.storage = {
