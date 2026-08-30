@@ -1,7 +1,7 @@
 {
   "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "Prop-firm challenge tracker, trade journal, equity curve, and FX converter.",
+  "description": "Prop firm risk rules, position sizing, FX conversion, equity curve, journal, and trading insights.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
@@ -9,8 +9,17 @@
   "background_color": "#05070C",
   "theme_color": "#0A0E16",
   "icons": [
-    { "src": "./icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "./icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "./icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "./icon.png",
+      "sizes": "1600x1600",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.png",
+      "sizes": "1600x1600",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
   ]
 }
