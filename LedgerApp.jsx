@@ -6267,6 +6267,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             </div>
           </>
         )}
+<div style={{color: 'white'}}>DEBUG: combinedMistakeRows={combinedMistakeRows.length}, patternDetected={String(patternDetected)}, closestWeekday={JSON.stringify(closestWeekday)}</div>
 
 {combinedMistakeRows.length > 0 && (
   <>
