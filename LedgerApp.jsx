@@ -5155,6 +5155,12 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     const mistakeFreq = journalMistakeFrequency(journalRows);
     const setupRadarData = journalSetupRadar(journalRows, customSetups);
     const mistakePatterns = journalMistakePatterns(journalRows);
+    const patternDetected =
+  (mistakePatterns.worstTrends[0]?.mistakeRate ?? 0) >= 30 ||
+  (mistakePatterns.worstWeekdays[0]?.mistakeRate ?? 0) >= 30;
+    const closestWeekday = [...mistakePatterns.weekdayRows].sort(
+  (a, b) => b.mistakeRate - a.mistakeRate
+)[0];
     const combinedMistakeRows = [
       ...mistakePatterns.trendRows.map((r) => ({ ...r, group: "Trend" })),
       ...mistakePatterns.weekdayRows.map((r) => ({ ...r, group: "Day" })),
@@ -6262,9 +6268,18 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           </>
         )}
 
+const patternDetected =
+  (mistakePatterns.worstTrends[0]?.mistakeRate ?? 0) >= 30 ||
+  (mistakePatterns.worstWeekdays[0]?.mistakeRate ?? 0) >= 30;
+
+// closest weekday even if it hasn't cleared the sample/rate bar yet
+const closestWeekday = [...mistakePatterns.weekdayRows].sort(
+  (a, b) => b.mistakeRate - a.mistakeRate
+)[0];
+
 {combinedMistakeRows.length > 0 && (
   <>
-    {((mistakePatterns.worstTrends[0]?.mistakeRate >= 30) || (mistakePatterns.worstWeekdays[0]?.mistakeRate >= 30)) && (
+    {patternDetected ? (
       <div
         className="rounded-2xl p-4 mb-6"
         style={{ background: palette.surface, border: `1px solid ${palette.red}`, boxShadow: palette.shadow }}
@@ -6282,12 +6297,34 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
               {joinWithAnd(mistakePatterns.worstTrends.map((t) => t.label.toLowerCase()))} conditions.{" "}
             </>
           )}
-      {mistakePatterns.worstWeekdays.length > 0 && mistakePatterns.worstWeekdays[0].mistakeRate >= 30 && (
+          {mistakePatterns.worstWeekdays.length > 0 && mistakePatterns.worstWeekdays[0].mistakeRate >= 30 && (
             <>
               {joinWithAnd(mistakePatterns.worstWeekdays.map((w) => `${w.fullLabel}s`))}{" "}
-              {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day{mistakePatterns.worstWeekdays.length > 1 ? "s" : ""} — {mistakePatterns.worstWeekdays[0].mistakeRate}% of entries flagged.
+              {mistakePatterns.worstWeekdays.length > 1 ? "are" : "is"} your worst day
+              {mistakePatterns.worstWeekdays.length > 1 ? "s" : ""} — {mistakePatterns.worstWeekdays[0].mistakeRate}% of entries flagged.
             </>
           )}
+        </div>
+      </div>
+    ) : (
+      <div
+        className="rounded-2xl p-4 mb-6"
+        style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow }}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <Lightbulb size={14} style={{ color: palette.textFaint }} />
+          <span className="uppercase" style={{ color: palette.textFaint, letterSpacing: "0.08em", fontSize: "10px" }}>
+            No Strong Pattern Yet
+          </span>
+        </div>
+        <div style={{ color: palette.textMuted, fontSize: "13px" }}>
+          {closestWeekday
+            ? `${closestWeekday.fullLabel} currently has your highest mistake rate at ${closestWeekday.mistakeRate}%${
+                closestWeekday.count < 3
+                  ? `, but it only has ${closestWeekday.count} entr${closestWeekday.count === 1 ? "y" : "ies"} so far — a weekday needs at least 3 journaled entries before a pattern counts`
+                  : ", which is under the 30% threshold that flags a real pattern"
+              }.`
+            : "Fill in the Mistake field on a few more journal rows — once a weekday or market condition has at least 3 entries, patterns will start surfacing here."}
         </div>
       </div>
     )}
