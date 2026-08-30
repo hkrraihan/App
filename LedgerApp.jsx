@@ -786,6 +786,12 @@ const MARKET_SESSIONS = [
   { id: "london", label: "London", startUTC: 8, endUTC: 17, color: "#6CBF8E" },
   { id: "newyork", label: "New York", startUTC: 13, endUTC: 22, color: "#BFA26C" },
 ];
+
+function mod24(h) {
+  return ((h % 24) + 24) % 24;
+}
+
+function sessionOpenAtUTCHour(session, hourUTC) {
   const h = mod24(hourUTC);
   if (session.startUTC <= session.endUTC) {
     return h >= session.startUTC && h < session.endUTC;
