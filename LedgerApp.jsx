@@ -9155,11 +9155,3 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
     </div>
   );
 }
-
-import { createRoot } from "react-dom/client";
-
-const rootEl = document.getElementById("root");
-if (rootEl) {
-  rootEl.innerHTML = "";
-  createRoot(rootEl).render(<LedgerApp />);
-}
