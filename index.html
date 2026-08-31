@@ -48,15 +48,7 @@
   <!-- Boots LedgerApp.jsx. data-type="module" tells Babel to keep import/export
        syntax intact (only JSX is transformed) so the import map above can resolve it,
        and Babel will also fetch + transform the local LedgerApp.jsx import on the fly. -->
-  <script type="text/babel" data-type="module" data-presets="react">
-    import React from "react";
-    import { createRoot } from "react-dom/client";
-    import LedgerApp from "./LedgerApp.jsx";
-
-    const rootEl = document.getElementById("root");
-    rootEl.innerHTML = "";
-    createRoot(rootEl).render(<LedgerApp />);
-  </script>
+  <script type="text/babel" data-type="module" data-presets="react" src="./LedgerApp.jsx"></script>
 
   <script>
     if ("serviceWorker" in navigator) {
