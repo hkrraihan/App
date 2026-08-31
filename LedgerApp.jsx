@@ -3500,12 +3500,10 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
   };
 
   const createNote = () => {
-  if (!isPro && notepadNotes.length >= FREE_NOTE_LIMIT) {
-    openPaywall(`Free notes are limited to ${FREE_NOTE_LIMIT}. Upgrade for unlimited notes.`);
-    return;
-  }
-  // ...rest unchanged
-  const createNote = () => {
+    if (!isPro && notepadNotes.length >= FREE_NOTE_LIMIT) {
+      openPaywall(`Free notes are limited to ${FREE_NOTE_LIMIT}. Upgrade for unlimited notes.`);
+      return;
+    }
     const id = `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const now = Date.now();
     const firstBlockId = makeBlockId();
