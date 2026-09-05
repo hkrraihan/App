@@ -315,6 +315,57 @@ async function fetchLiveFxRates() {
   return null;
 }
 
+const FF_CALENDAR_URLS = [
+  "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+  "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+];
+
+async function fetchForexFactoryEvents() {
+  const results = await Promise.allSettled(
+    FF_CALENDAR_URLS.map((url) =>
+      fetch(url).then((r) => {
+        if (!r.ok) throw new Error(`Request failed (${r.status})`);
+        return r.json();
+      })
+    )
+  );
+
+  const merged = [];
+  let anyOk = false;
+  results.forEach((r) => {
+    if (r.status === "fulfilled" && Array.isArray(r.value)) {
+      anyOk = true;
+      merged.push(...r.value);
+    }
+  });
+
+  if (!anyOk) {
+    throw new Error("Couldn't reach the Forex Factory calendar feed.");
+  }
+
+  return merged
+    .filter(
+      (e) =>
+        e &&
+        e.country === "USD" &&
+        e.title &&
+        e.date &&
+        String(e.impact || "").toLowerCase() !== "holiday"
+    )
+    .map((e) => {
+      const d = new Date(e.date);
+      if (Number.isNaN(d.getTime())) return null;
+      const impact = String(e.impact || "").toLowerCase();
+      return {
+        name: e.title,
+        impact: impact === "high" || impact === "medium" || impact === "low" ? impact : "low",
+        date: dayKeyFromDate(d),
+        time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+      };
+    })
+    .filter(Boolean);
+}
+
 const CURRENCY_NAMES = {
   USD: "US Dollar",
   EUR: "Euro",
@@ -2597,10 +2648,32 @@ const openPaywall = (reason) => {
     persistNews(newsEvents.filter((e) => e.id !== id));
   };
 
-  const quickAddCommonEvents = () => {
+  const quickAddCommonEvents = async () => {
     setQuickAddMsg("");
     const now = new Date();
-    const candidates = buildCommonEventsForMonth(now.getFullYear(), now.getMonth());
+
+    let candidates = null;
+    let source = "estimate";
+    let warning = "";
+
+    try {
+      candidates = await fetchForexFactoryEvents();
+      source = "live";
+    } catch (err) {
+      warning = `${err.message} Using the built-in estimate list instead. `;
+      candidates = null;
+    }
+
+    if (!candidates || candidates.length === 0) {
+      candidates = buildCommonEventsForMonth(now.getFullYear(), now.getMonth());
+      source = "estimate";
+    }
+
+    if (candidates.length === 0) {
+      setQuickAddMsg(`${warning}No events found.`);
+      return;
+    }
+
     const existingKeys = new Set(newsEvents.map((e) => `${e.name}|${e.date}`));
     const toAdd = candidates
       .filter((c) => !existingKeys.has(`${c.name}|${c.date}`))
@@ -2613,12 +2686,17 @@ const openPaywall = (reason) => {
         alarm: true,
         rung: false,
       }));
+
     if (toAdd.length === 0) {
-      setQuickAddMsg("Already added, or none apply this month.");
+      setQuickAddMsg(`${warning}Already added, or none apply.`);
       return;
     }
     persistNews([...newsEvents, ...toAdd]);
-    setQuickAddMsg(`Added ${toAdd.length} common event${toAdd.length === 1 ? "" : "s"} for this month.`);
+    setQuickAddMsg(
+      `${warning}Added ${toAdd.length} event${toAdd.length === 1 ? "" : "s"}${
+        source === "live" ? " (live from Forex Factory)" : " (built-in estimates)"
+      }.`
+    );
   };
 
   const persistTrades = async (next) => {
@@ -8506,7 +8584,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             }}
           >
             <Newspaper size={16} />
-            Quick-Add This Month's Common Events
+            Quick-Add Upcoming US Events
           </button>
           {quickAddMsg && (
             <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
@@ -8514,9 +8592,10 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             </p>
           )}
           <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-            Adds common recurring high-impact events (NFP, CPI, FOMC, jobless claims) for the current month using
-            typical release patterns \u2014 always double-check exact times against an official calendar, since
-            these are estimates, not a live feed.
+            Pulls real event dates and times for the next ~2 weeks (NFP, CPI, FOMC, and more) from a live
+            economic calendar feed. If that feed is ever unreachable, this falls back to a built-in estimate
+            list for the current month instead — always double-check exact times against an official
+            calendar in that case.
           </p>
 
           <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
