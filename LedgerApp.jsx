@@ -913,41 +913,48 @@ function computeGoalProgress(trades, startBal, period) {
   return { count: periodTrades.length, netPnl, pct, periodStart };
 }
 
-// --- Marketaux market news (replaces the old Forex Factory calendar) ---
-// Get a free token at https://www.marketaux.com (no card required) and paste it below.
-const MARKETAUX_API_KEY = "Q1WlnlFB9VxM5iKboEl3JykIe6bL3USpTfAnSQdU";
-const MARKETAUX_NEWS_URL = "https://api.marketaux.com/v1/news/all";
-const MARKETAUX_STORAGE_KEY = "marketaux:news:v1";
-const MARKETAUX_CACHE_MS = 30 * 60 * 1000; // 30 min cache — keeps you well under the 100/day free limit
+// --- Financial Modeling Prep economic calendar (real upcoming FOMC/CPI/PPI/NFP events) ---
+// Get a free API key at https://financialmodelingprep.com (free tier: 250 calls/day) and paste it below.
+const FMP_API_KEY = "KCMZKCo6CyEOXLAxWSNRfL3Tp69ANXON";
+const FMP_ECON_CALENDAR_URL = "https://financialmodelingprep.com/api/v3/economic_calendar";
+const FMP_STORAGE_KEY = "fmp:econ-calendar:v1";
+const FMP_CACHE_MS = 12 * 60 * 60 * 1000; // 12 hours — new estimates/actuals can post mid-month
 
-async function fetchMarketauxNews(symbols = "") {
-  if (!MARKETAUX_API_KEY || MARKETAUX_API_KEY === "PASTE_YOUR_MARKETAUX_TOKEN_HERE") {
-    throw new Error("Add your free Marketaux API token to MARKETAUX_API_KEY first.");
+const ECON_KEYWORDS = /CPI|PPI|FOMC|NFP|GDP|non.?farm|interest rate|federal funds|unemployment|payroll|retail sales|PCE|core inflation|jobless/i;
+
+function currentMonthRange() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth(), 1);
+  const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const fmtDate = (d) => d.toISOString().slice(0, 10);
+  return { from: fmtDate(from), to: fmtDate(to) };
+}
+
+async function fetchEconomicCalendar() {
+  if (!FMP_API_KEY || FMP_API_KEY === "PASTE_YOUR_FMP_API_KEY_HERE") {
+    throw new Error("Add your free Financial Modeling Prep API key to FMP_API_KEY first.");
   }
-  const params = new URLSearchParams({
-    api_token: MARKETAUX_API_KEY,
-    language: "en",
-    limit: "10",
-    search: 'CPI OR PPI OR FOMC OR NFP OR "Federal Reserve" OR "interest rate" OR inflation OR "non-farm payrolls" OR "jobs report" OR "rate cut" OR "rate hike"',
-  });
-  if (symbols) params.set("symbols", symbols);
 
-  const res = await fetch(`${MARKETAUX_NEWS_URL}?${params.toString()}`);
-  if (!res.ok) throw new Error(`Marketaux request failed (${res.status})`);
+  const { from, to } = currentMonthRange();
+  const params = new URLSearchParams({ from, to, apikey: FMP_API_KEY });
+
+  const res = await fetch(`${FMP_ECON_CALENDAR_URL}?${params.toString()}`);
+  if (!res.ok) throw new Error(`FMP request failed (${res.status})`);
   const json = await res.json();
-  if (!json || !Array.isArray(json.data)) throw new Error("Unexpected response from Marketaux.");
+  if (!Array.isArray(json)) throw new Error("Unexpected response from Financial Modeling Prep.");
 
-  return json.data.map((item) => {
-    const entity = Array.isArray(item.entities) && item.entities.length ? item.entities[0] : null;
-    return {
-      id: item.uuid,
-      title: item.title,
-      source: item.source,
-      url: item.url,
-      publishedAt: item.published_at,
-      sentiment: entity && typeof entity.sentiment_score === "number" ? entity.sentiment_score : null,
-    };
-  });
+  return json
+    .filter((item) => item.country === "US" && ECON_KEYWORDS.test(item.event || ""))
+    .map((item) => ({
+      id: `${item.event}-${item.date}`,
+      name: item.event,
+      date: item.date,
+      impact: (item.impact || "").toLowerCase() || "medium",
+      previous: item.previous,
+      estimate: item.estimate,
+      actual: item.actual,
+    }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 const SW_SCRIPT = `
@@ -2028,9 +2035,9 @@ export default function LedgerApp() {
 
   const [newsEvents, setNewsEvents] = useState([]);
   const [newsLoaded, setNewsLoaded] = useState(false);
-  const [marketauxArticles, setMarketauxArticles] = useState([]);
-  const [marketauxStatus, setMarketauxStatus] = useState("idle"); // idle | loading | live | error
-  const [marketauxError, setMarketauxError] = useState("");
+  const [econEvents, setEconEvents] = useState([]);
+  const [econStatus, setEconStatus] = useState("idle"); // idle | loading | live | error
+  const [econError, setEconError] = useState("");
   const [newEventName, setNewEventName] = useState("");
   const [newEventImpact, setNewEventImpact] = useState("high");
   const [newEventDate, setNewEventDate] = useState("");
@@ -2405,21 +2412,21 @@ const openPaywall = (reason) => {
     let cancelled = false;
     (async () => {
       try {
-        const cached = await window.storage.get(MARKETAUX_STORAGE_KEY, false);
+        const cached = await window.storage.get(FMP_STORAGE_KEY, false);
         if (cached && cached.value) {
           const parsed = JSON.parse(cached.value);
-          if (Array.isArray(parsed.articles)) {
+          if (Array.isArray(parsed.events)) {
             if (!cancelled) {
-              setMarketauxArticles(parsed.articles);
-              setMarketauxStatus("live");
+              setEconEvents(parsed.events);
+              setEconStatus("live");
             }
-            if (parsed.fetchedAt && Date.now() - parsed.fetchedAt < MARKETAUX_CACHE_MS) return;
+            if (parsed.fetchedAt && Date.now() - parsed.fetchedAt < FMP_CACHE_MS) return;
           }
         }
       } catch (err) {
         // no cache yet — fall through to a fresh fetch
       }
-      if (!cancelled) loadMarketauxNews();
+      if (!cancelled) loadEconomicCalendar();
     })();
     return () => {
       cancelled = true;
@@ -2616,19 +2623,19 @@ const openPaywall = (reason) => {
     persistNews(newsEvents.filter((e) => e.id !== id));
   };
 
-  const loadMarketauxNews = async () => {
-    setMarketauxError("");
-    setMarketauxStatus("loading");
+  const loadEconomicCalendar = async () => {
+    setEconError("");
+    setEconStatus("loading");
     try {
-      const articles = await fetchMarketauxNews();
-      setMarketauxArticles(articles);
-      setMarketauxStatus("live");
+      const events = await fetchEconomicCalendar();
+      setEconEvents(events);
+      setEconStatus("live");
       window.storage
-        .set(MARKETAUX_STORAGE_KEY, JSON.stringify({ articles, fetchedAt: Date.now() }), false)
+        .set(FMP_STORAGE_KEY, JSON.stringify({ events, fetchedAt: Date.now() }), false)
         .catch(() => {});
     } catch (err) {
-      setMarketauxStatus("error");
-      setMarketauxError(err.message || "Couldn't load market news.");
+      setEconStatus("error");
+      setEconError(err.message || "Couldn't load the economic calendar.");
     }
   };
 
@@ -4615,7 +4622,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                   inputMode="decimal"
                   value={goals[key]}
                   onChange={(e) => persistGoals({ ...goals, [key]: e.target.value })}
-                  placeholder="Set a target % (e.g. 10)"
+                  placeholder="Set a target %"
                   className="w-full rounded-lg px-3 py-2 bg-transparent outline-none"
                   style={{ background: palette.field, border: `1px solid ${palette.border}`, color: palette.text, fontFamily: mono, fontSize: "13px" }}
                 />
@@ -8507,11 +8514,11 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
               className="uppercase"
               style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
             >
-              Latest Market News
+              Economic Calendar — This Month
             </span>
             <button
               type="button"
-              onClick={loadMarketauxNews}
+              onClick={loadEconomicCalendar}
               className={TAP}
               style={{ color: palette.gold, fontSize: "11px", fontFamily: mono }}
             >
@@ -8519,61 +8526,80 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             </button>
           </div>
 
-          {marketauxStatus === "loading" && (
+          {econStatus === "loading" && (
             <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-              Loading headlines\u2026
+              Loading economic calendar\u2026
             </p>
           )}
-          {marketauxStatus === "error" && (
+          {econStatus === "error" && (
             <p className="text-xs mb-4" style={{ color: palette.red }}>
-              {marketauxError}
+              {econError}
             </p>
           )}
-          {marketauxStatus === "live" && marketauxArticles.length === 0 && (
+          {econStatus === "live" && econEvents.length === 0 && (
             <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-              No headlines returned.
+              No high-impact USD events found for this month.
             </p>
           )}
 
-           {marketauxArticles.map((a) => (
-            <a
-              key={a.id}
-              href={a.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block rounded-lg px-3 py-2.5 mb-2"
-              style={{
-                background: palette.surface,
-                border: `1px solid ${palette.border}`,
-                boxShadow: palette.shadow,
-                textDecoration: "none",
-              }}
-            >
-              <div style={{ color: palette.text, fontSize: "13px", marginBottom: "3px" }}>{a.title}</div>
-              <div className="flex items-center justify-between">
-                <span style={{ color: palette.textFaint, fontSize: "11px" }}>
-                  {a.source} \u00b7 {a.publishedAt ? new Date(a.publishedAt).toLocaleString() : ""}
-                </span>
-                {typeof a.sentiment === "number" && (
+          {econEvents.map((ev) => {
+            const evDate = new Date(ev.date.replace(" ", "T"));
+            const released = ev.actual !== null && ev.actual !== undefined;
+            return (
+              <div
+                key={ev.id}
+                className="rounded-lg px-3 py-2.5 mb-2"
+                style={{
+                  background: palette.surface,
+                  border: `1px solid ${palette.border}`,
+                  boxShadow: palette.shadow,
+                  opacity: released ? 0.7 : 1,
+                }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span style={{ color: palette.text, fontSize: "13px" }}>{ev.name}</span>
                   <span
                     style={{
+                      fontSize: "9px",
                       fontFamily: mono,
-                      fontSize: "10px",
-                      color: a.sentiment > 0 ? palette.green : a.sentiment < 0 ? palette.red : palette.textMuted,
+                      color:
+                        ev.impact === "high" ? palette.red : ev.impact === "medium" ? palette.goldBright : palette.textMuted,
+                      border: `1px solid ${
+                        ev.impact === "high" ? palette.red : ev.impact === "medium" ? palette.goldBright : palette.textMuted
+                      }`,
+                      borderRadius: "999px",
+                      padding: "1px 6px",
+                      textTransform: "uppercase",
+                      flexShrink: 0,
+                      marginLeft: "8px",
                     }}
                   >
-                    {a.sentiment > 0 ? "+" : ""}
-                    {a.sentiment.toFixed(2)}
+                    {ev.impact}
                   </span>
-                )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span style={{ color: palette.textFaint, fontSize: "11px" }}>
+                    {evDate.toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <span style={{ fontFamily: mono, fontSize: "10px", color: palette.textMuted }}>
+                    {ev.previous != null && `Prev ${ev.previous}`}
+                    {ev.estimate != null && `  Est ${ev.estimate}`}
+                    {ev.actual != null && `  Actual ${ev.actual}`}
+                  </span>
+                </div>
               </div>
-            </a>
-          ))}
+            );
+          })}
 
           <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-            (100 requests/day). This is news, not scheduled
-            event times, so it won't auto-fill the alarm calendar below — add specific events you want a
-            countdown/alarm for manually.
+            (250 requests/day). Shows this month's US releases — past and upcoming — filtered to CPI, PPI, FOMC, NFP, GDP, and similar
+            high-impact events. This is separate from the alarm calendar below — add specific events there for
+            a countdown/alarm.
           </p>
 
           <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
