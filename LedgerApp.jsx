@@ -1963,6 +1963,7 @@ export default function LedgerApp() {
   const [trades, setTrades] = useState([]);
   const [tradesLoaded, setTradesLoaded] = useState(false);
   const [tradeInput, setTradeInput] = useState("");
+  const [tradePair, setTradePair] = useState("");
   const [tradeNote, setTradeNote] = useState("");
   const [tradeEmotion, setTradeEmotion] = useState(null);
   const [tradeSetup, setTradeSetup] = useState(null);
@@ -3184,6 +3185,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
   const resetTradeForm = () => {
     setTradeInput("");
+    setTradePair("");
     setTradeNote("");
     setTradeEmotion(null);
     setTradeSetup(null);
@@ -3192,6 +3194,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
   const startEditTrade = (t) => {
     setTradeInput(String(t.pnl));
+    setTradePair(t.pair || "");
     setTradeNote(t.note || "");
     setTradeEmotion(t.emotion || null);
     setTradeSetup(t.setup || null);
@@ -3213,7 +3216,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     if (editingTradeId) {
       const next = trades.map((t) =>
         t.id === editingTradeId
-          ? { ...t, pnl, note: tradeNote.trim(), emotion: tradeEmotion, setup: tradeSetup }
+          ? { ...t, pnl, pair: tradePair.trim(), note: tradeNote.trim(), emotion: tradeEmotion, setup: tradeSetup }
           : t
       );
       persistTrades(next);
@@ -3226,6 +3229,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         pnl,
+        pair: tradePair.trim(),
         note: tradeNote.trim(),
         emotion: tradeEmotion,
         setup: tradeSetup,
@@ -4832,6 +4836,20 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             Editing a logged trade.
           </p>
         )}
+        <input
+          type="text"
+          value={tradePair}
+          onChange={(e) => setTradePair(e.target.value.toUpperCase())}
+          placeholder="Pair (e.g. EURUSD)"
+          className="w-full rounded-lg px-3 py-2.5 mb-2 bg-transparent outline-none"
+          style={{
+            background: palette.field,
+            border: `1px solid ${palette.border}`,
+            color: palette.text,
+            fontFamily: mono,
+            fontSize: "14px",
+          }}
+        />
         <div className="flex gap-2 mb-2">
           <div
             className="flex items-center rounded-lg px-3 flex-1"
@@ -5273,6 +5291,20 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
                             </span>
                             {t.emotion && emotionMeta(t.emotion) && (
                               <span style={{ fontSize: "13px" }}>{emotionMeta(t.emotion).emoji}</span>
+                            )}
+                            {t.pair && (
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontFamily: mono,
+                                  color: palette.gold,
+                                  border: `1px solid ${palette.gold}`,
+                                  borderRadius: "999px",
+                                  padding: "1px 6px",
+                                }}
+                              >
+                                {t.pair}
+                              </span>
                             )}
                             {t.setup && (
                               <span
