@@ -1,26 +1,25 @@
-const CACHE_NAME = 'ledger-cache-v1';
-
-const PRECACHE_ASSETS = [
-  './',
-  './index.html',
-  './LedgerApp.jsx',
-  './manifest.json',
-  './icon.png',
+const CACHE_NAME = "ledger-cache-v1";
+const APP_SHELL = [
+  "./",
+  "./index.html",
+  "./manifest.json",
+  "./LedgerApp.jsx",
+  "./icon.png",
 ];
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS))
+      .then((cache) => cache.addAll(APP_SHELL))
       .catch(() => {
-        // Non-fatal — the app still works online without a full precache.
+        // Non-critical — first load will still work online, it just won't be pre-cached.
       })
   );
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
@@ -29,22 +28,31 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first for same-origin requests, falling back to cache when offline.
-// (Third-party CDN requests for react/recharts/etc. are left to the browser's own cache.)
-self.addEventListener('fetch', (event) => {
-  const { request } = event;
-  if (request.method !== 'GET') return;
-  if (!request.url.startsWith(self.location.origin)) return;
+// Network-first with a cache fallback, so you always get the latest deploy when
+// online but the app still opens (and works) when offline.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return; // let CDN requests pass through normally
 
   event.respondWith(
-    fetch(request)
+    fetch(event.request)
       .then((response) => {
-        if (response && response.ok) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         }
         return response;
       })
-      .catch(() => caches.match(request))
+      .catch(() => caches.match(event.request))
   );
+});
+
+// Matches the SW_SCRIPT registered dynamically inside LedgerApp.jsx, so News-tab
+// alarms keep working with a system notification whichever service worker is
+// currently controlling the page.
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SHOW_NOTIFICATION") {
+    self.registration.showNotification(event.data.title, event.data.options);
+  }
 });
