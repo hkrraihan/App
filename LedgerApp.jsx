@@ -915,7 +915,7 @@ function computeGoalProgress(trades, startBal, period) {
 
 // --- Marketaux market news (replaces the old Forex Factory calendar) ---
 // Get a free token at https://www.marketaux.com (no card required) and paste it below.
-const MARKETAUX_API_KEY = "PASTE_YOUR_MARKETAUX_TOKEN_HERE";
+const MARKETAUX_API_KEY = "Q1WlnlFB9VxM5iKboEl3JykIe6bL3USpTfAnSQdU";
 const MARKETAUX_NEWS_URL = "https://api.marketaux.com/v1/news/all";
 const MARKETAUX_STORAGE_KEY = "marketaux:news:v1";
 const MARKETAUX_CACHE_MS = 30 * 60 * 1000; // 30 min cache — keeps you well under the 100/day free limit
@@ -8534,7 +8534,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             </p>
           )}
 
-          {marketauxArticles.map((a) => (
+           {marketauxArticles.map((a) => (
             
               key={a.id}
               href={a.url}
