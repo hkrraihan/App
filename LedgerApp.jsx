@@ -1813,34 +1813,18 @@ function drawShareCard(canvas, {
   theme,
 }) {
   const W = 1080;
-  const H = 1650;
+  const H = 1950;
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d");
 
   const c = theme === "light" ? SHARE_COLORS.light : SHARE_COLORS.dark;
+  const isDark = theme !== "light";
   const lineColor = tone === "bad" ? c.red : c.green;
   const gradeColor = grade === "A" || grade === "B" ? c.green : grade === "D" || grade === "F" ? c.red : c.gold;
-
-  // Base background gradient
-  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-  bgGrad.addColorStop(0, c.bgFrom);
-  bgGrad.addColorStop(1, c.bgTo);
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, W, H);
-
-  // Ambient glow spots for depth
-  const glow1 = ctx.createRadialGradient(W * 0.15, 120, 0, W * 0.15, 120, 520);
-  glow1.addColorStop(0, `${lineColor}22`);
-  glow1.addColorStop(1, `${lineColor}00`);
-  ctx.fillStyle = glow1;
-  ctx.fillRect(0, 0, W, H * 0.45);
-
-  const glow2 = ctx.createRadialGradient(W * 0.9, 80, 0, W * 0.9, 80, 460);
-  glow2.addColorStop(0, `${c.gold}1E`);
-  glow2.addColorStop(1, `${c.gold}00`);
-  ctx.fillStyle = glow2;
-  ctx.fillRect(0, 0, W, H * 0.4);
+  const tint = isDark
+    ? (tone === "bad" ? "#FF9B93" : "#7EE8C4")
+    : (tone === "bad" ? "#8C2318" : "#0A6B49");
 
   const roundRect = (x, y, w, h, r) => {
     ctx.beginPath();
@@ -1852,13 +1836,283 @@ function drawShareCard(canvas, {
     ctx.closePath();
   };
 
-  // Outer panel border
+  // ---- icon glyphs ----
+  const drawArrowGlyph = (cx, cy, s, color, up) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (up) {
+      ctx.moveTo(cx, cy - s);
+      ctx.lineTo(cx + s, cy + s * 0.6);
+      ctx.lineTo(cx - s, cy + s * 0.6);
+    } else {
+      ctx.moveTo(cx, cy + s);
+      ctx.lineTo(cx + s, cy - s * 0.6);
+      ctx.lineTo(cx - s, cy - s * 0.6);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawFlameGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + s);
+    ctx.bezierCurveTo(cx - s * 0.9, cy + s * 0.3, cx - s * 0.6, cy - s * 0.6, cx, cy - s);
+    ctx.bezierCurveTo(cx + s * 0.15, cy - s * 0.4, cx + s * 0.5, cy - s * 0.3, cx + s * 0.4, cy + s * 0.1);
+    ctx.bezierCurveTo(cx + s * 0.7, cy - s * 0.1, cx + s * 0.8, cy + s * 0.4, cx, cy + s);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawStarGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const outerAngle = -Math.PI / 2 + i * ((Math.PI * 2) / 5);
+      const innerAngle = outerAngle + Math.PI / 5;
+      const ox = cx + Math.cos(outerAngle) * s;
+      const oy = cy + Math.sin(outerAngle) * s;
+      const ix = cx + Math.cos(innerAngle) * s * 0.42;
+      const iy = cy + Math.sin(innerAngle) * s * 0.42;
+      if (i === 0) ctx.moveTo(ox, oy);
+      else ctx.lineTo(ox, oy);
+      ctx.lineTo(ix, iy);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawBoltGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.15, cy - s);
+    ctx.lineTo(cx - s * 0.55, cy + s * 0.15);
+    ctx.lineTo(cx - s * 0.05, cy + s * 0.15);
+    ctx.lineTo(cx - s * 0.15, cy + s);
+    ctx.lineTo(cx + s * 0.55, cy - s * 0.15);
+    ctx.lineTo(cx + s * 0.05, cy - s * 0.15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawTargetGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = s * 0.18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, s, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.55, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, s * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawWarningGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = s * 0.16;
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - s);
+    ctx.lineTo(cx + s * 0.92, cy + s * 0.75);
+    ctx.lineTo(cx - s * 0.92, cy + s * 0.75);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.fillRect(cx - s * 0.08, cy - s * 0.35, s * 0.16, s * 0.55);
+    ctx.beginPath();
+    ctx.arc(cx, cy + s * 0.42, s * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawSwapGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = s * 0.16;
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.7, cy - s * 0.3);
+    ctx.lineTo(cx + s * 0.4, cy - s * 0.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.4, cy - s * 0.3);
+    ctx.lineTo(cx + s * 0.15, cy - s * 0.55);
+    ctx.lineTo(cx + s * 0.15, cy - s * 0.05);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.7, cy + s * 0.3);
+    ctx.lineTo(cx - s * 0.4, cy + s * 0.3);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - s * 0.4, cy + s * 0.3);
+    ctx.lineTo(cx - s * 0.15, cy + s * 0.05);
+    ctx.lineTo(cx - s * 0.15, cy + s * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+
+  const drawRatioGlyph = (cx, cy, s, color) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    const baseY = cy + s * 0.8;
+    ctx.fillRect(cx - s * 0.6, baseY - s * 0.9, s * 0.4, s * 0.9);
+    ctx.fillRect(cx + s * 0.2, baseY - s * 1.5, s * 0.4, s * 1.5);
+    ctx.restore();
+  };
+
+  const ICONS = {
+    target: (cx, cy, s, color) => drawTargetGlyph(cx, cy, s, color),
+    arrowUp: (cx, cy, s, color) => drawArrowGlyph(cx, cy, s, color, true),
+    arrowDown: (cx, cy, s, color) => drawArrowGlyph(cx, cy, s, color, false),
+    flame: drawFlameGlyph,
+    star: drawStarGlyph,
+    warning: drawWarningGlyph,
+    bolt: drawBoltGlyph,
+    swap: drawSwapGlyph,
+    ratio: drawRatioGlyph,
+  };
+
+  const drawIconBadge = (cx, cy, r, color, glyphFn) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    const bg = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    bg.addColorStop(0, `${color}33`);
+    bg.addColorStop(1, `${color}0A`);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `${color}66`;
+    ctx.stroke();
+    ctx.restore();
+    glyphFn(cx, cy, r * 0.5, color);
+  };
+
+  const drawLogoMark = (x, y, s, color) => {
+    ctx.save();
+    ctx.fillStyle = color;
+    const barW = s * 0.26;
+    const gap = s * 0.16;
+    const heights = [s * 0.5, s * 0.95, s * 0.68];
+    heights.forEach((h, i) => {
+      const bx = x + i * (barW + gap);
+      const by = y + (s - h);
+      ctx.fillRect(bx + barW / 2 - 1.5, y - s * 0.15, 3, s * 1.15);
+      ctx.fillRect(bx, by, barW, h);
+    });
+    ctx.restore();
+  };
+
+  // ring gauge for the performance wheel
+  const drawRing = (cx, cy, radius, thickness, value) => {
+    return { cx, cy, radius, thickness, value };
+  };
+  const paintRing = (cx, cy, radius, thickness, value, color) => {
+    ctx.save();
+    ctx.lineWidth = thickness;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = `${color}22`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const clamped = Math.max(0.025, Math.min(1, value));
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + Math.PI * 2 * clamped;
+    ctx.shadowColor = `${color}AA`;
+    ctx.shadowBlur = 16;
+    ctx.strokeStyle = color;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, startAngle, endAngle);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // ---- outer letterbox ----
+  ctx.fillStyle = c.bgTo;
+  ctx.fillRect(0, 0, W, H);
+
+  // ---- clipped inner card: gradient + aurora + grid + watermark ----
+  ctx.save();
   roundRect(36, 36, W - 72, H - 72, 28);
-  ctx.strokeStyle = c.border;
+  ctx.clip();
+
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
+  bgGrad.addColorStop(0, c.bgFrom);
+  bgGrad.addColorStop(1, c.bgTo);
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.globalAlpha = isDark ? 0.3 : 0.16;
+  ctx.fillStyle = c.textFaint;
+  for (let yy = 60; yy < H - 40; yy += 34) {
+    for (let xx = 60; xx < W - 40; xx += 34) {
+      ctx.beginPath();
+      ctx.arc(xx, yy, 1.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  const glowA = isDark ? "2E" : "16";
+  const glowB = isDark ? "26" : "12";
+  const g1 = ctx.createRadialGradient(W * 0.12, 100, 0, W * 0.12, 100, 560);
+  g1.addColorStop(0, `${lineColor}${glowA}`);
+  g1.addColorStop(1, `${lineColor}00`);
+  ctx.fillStyle = g1;
+  ctx.fillRect(0, 0, W, H * 0.5);
+
+  const g2 = ctx.createRadialGradient(W * 0.92, 60, 0, W * 0.92, 60, 480);
+  g2.addColorStop(0, `${c.gold}${glowB}`);
+  g2.addColorStop(1, `${c.gold}00`);
+  ctx.fillStyle = g2;
+  ctx.fillRect(0, 0, W, H * 0.45);
+
+  const g3 = ctx.createRadialGradient(W * 0.5, H * 0.86, 0, W * 0.5, H * 0.86, 520);
+  g3.addColorStop(0, `${lineColor}${glowB}`);
+  g3.addColorStop(1, `${lineColor}00`);
+  ctx.fillStyle = g3;
+  ctx.fillRect(0, H * 0.55, W, H * 0.45);
+
+  ctx.save();
+  ctx.globalAlpha = isDark ? 0.05 : 0.035;
+  ctx.fillStyle = c.text;
+  ctx.font = "800 340px monospace";
+  ctx.textAlign = "center";
+  ctx.translate(W * 0.62, H * 0.6);
+  ctx.rotate(-0.09);
+  ctx.fillText("LEDGER", 0, 0);
+  ctx.restore();
+
+  ctx.restore(); // end clip
+
+  // ---- outer border with glow ----
+  ctx.save();
+  ctx.shadowColor = `${c.gold}55`;
+  ctx.shadowBlur = 20;
+  roundRect(36, 36, W - 72, H - 72, 28);
+  ctx.strokeStyle = `${c.gold}77`;
   ctx.lineWidth = 2;
   ctx.stroke();
+  ctx.restore();
 
-  // Corner accent brackets \u2014 terminal / HUD aesthetic
   const drawCorner = (x, y, dx, dy) => {
     const len = 34;
     ctx.strokeStyle = c.gold;
@@ -1874,22 +2128,30 @@ function drawShareCard(canvas, {
   drawCorner(36, H - 36, 1, -1);
   drawCorner(W - 36, H - 36, -1, -1);
 
-  // Header accent bar + label
-  ctx.fillStyle = c.gold;
-  roundRect(80, 96, 5, 26, 3);
-  ctx.fill();
+  // ---- header ----
+  drawLogoMark(80, 96, 26, c.gold);
   ctx.fillStyle = c.gold;
   ctx.font = "600 26px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("LEDGER \u00b7 WEEKLY RECAP", 98, 118);
+  ctx.fillText("LEDGER \u00b7 WEEKLY RECAP", 130, 118);
 
-  // Grade badge, top-right corner, with a soft glow ring
   if (grade && grade !== "N/A") {
     const badgeCx = W - 140;
     const badgeCy = 108;
+    for (let i = 0; i < 28; i++) {
+      const a = (i / 28) * Math.PI * 2;
+      const r1 = 58;
+      const r2 = 66;
+      ctx.strokeStyle = `${gradeColor}${i % 2 === 0 ? "77" : "33"}`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(badgeCx + Math.cos(a) * r1, badgeCy + Math.sin(a) * r1);
+      ctx.lineTo(badgeCx + Math.cos(a) * r2, badgeCy + Math.sin(a) * r2);
+      ctx.stroke();
+    }
     ctx.save();
-    ctx.shadowColor = `${gradeColor}88`;
-    ctx.shadowBlur = 26;
+    ctx.shadowColor = `${gradeColor}99`;
+    ctx.shadowBlur = 30;
     ctx.beginPath();
     ctx.arc(badgeCx, badgeCy, 46, 0, Math.PI * 2);
     ctx.fillStyle = `${gradeColor}22`;
@@ -1902,10 +2164,8 @@ function drawShareCard(canvas, {
     ctx.font = "700 44px monospace";
     ctx.textAlign = "center";
     ctx.fillText(grade, badgeCx, badgeCy + 16);
-    ctx.textAlign = "left";
     ctx.fillStyle = c.textFaint;
     ctx.font = "600 14px sans-serif";
-    ctx.textAlign = "center";
     ctx.fillText("GRADE", badgeCx, badgeCy + 68);
     ctx.textAlign = "left";
   }
@@ -1922,48 +2182,46 @@ function drawShareCard(canvas, {
   ctx.font = "600 20px sans-serif";
   ctx.fillText("NET RETURN", 80, 300);
 
-  // Net return number with a colored glow
+  const numText = fmtPct(netPct);
+  ctx.font = "700 96px monospace";
+  const numWidth = ctx.measureText(numText).width;
+  const numGrad = ctx.createLinearGradient(80, 0, 80 + numWidth, 0);
+  numGrad.addColorStop(0, lineColor);
+  numGrad.addColorStop(1, tint);
   ctx.save();
   ctx.shadowColor = `${lineColor}AA`;
-  ctx.shadowBlur = 28;
-  ctx.fillStyle = lineColor;
-  ctx.font = "700 96px monospace";
-  ctx.fillText(fmtPct(netPct), 80, 390);
+  ctx.shadowBlur = 32;
+  ctx.fillStyle = numGrad;
+  ctx.fillText(numText, 80, 390);
   ctx.restore();
 
-  // Direction arrow next to the number
-  ctx.font = "700 96px monospace";
-  const numWidth = ctx.measureText(fmtPct(netPct)).width;
-  const arrowX = 80 + numWidth + 30;
   const arrowUp = netPct >= 0;
-  const arrowCenterY = 357;
-  const half = 16;
-  ctx.fillStyle = lineColor;
-  ctx.beginPath();
-  if (arrowUp) {
-    ctx.moveTo(arrowX, arrowCenterY + half);
-    ctx.lineTo(arrowX + 28, arrowCenterY + half);
-    ctx.lineTo(arrowX + 14, arrowCenterY - half);
-  } else {
-    ctx.moveTo(arrowX, arrowCenterY - half);
-    ctx.lineTo(arrowX + 28, arrowCenterY - half);
-    ctx.lineTo(arrowX + 14, arrowCenterY + half);
-  }
-  ctx.closePath();
+  const pillX = 80 + numWidth + 26;
+  const pillY = 320;
+  const pillW = 62;
+  const pillH = 62;
+  roundRect(pillX, pillY, pillW, pillH, 18);
+  ctx.fillStyle = `${lineColor}22`;
   ctx.fill();
+  ctx.strokeStyle = `${lineColor}66`;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  drawArrowGlyph(pillX + pillW / 2, pillY + pillH / 2, 16, lineColor, arrowUp);
 
   const chartX = 80;
   const chartY = 440;
   const chartW = W - 160;
   const chartH = 320;
 
-  // Chart panel with a soft colored glow border
   roundRect(chartX, chartY, chartW, chartH, 20);
-  ctx.fillStyle = c.surface;
+  const chartBg = ctx.createLinearGradient(chartX, chartY, chartX, chartY + chartH);
+  chartBg.addColorStop(0, c.surface);
+  chartBg.addColorStop(1, `${c.surface}CC`);
+  ctx.fillStyle = chartBg;
   ctx.fill();
   ctx.save();
   ctx.shadowColor = `${lineColor}33`;
-  ctx.shadowBlur = 18;
+  ctx.shadowBlur = 20;
   ctx.strokeStyle = `${lineColor}55`;
   ctx.lineWidth = 1.5;
   ctx.stroke();
@@ -2005,7 +2263,7 @@ function drawShareCard(canvas, {
   ctx.lineTo(xFor(curve.length - 1), yFor(0));
   ctx.closePath();
   const areaGrad = ctx.createLinearGradient(0, plotY, 0, plotY + plotH);
-  areaGrad.addColorStop(0, `${lineColor}66`);
+  areaGrad.addColorStop(0, `${lineColor}70`);
   areaGrad.addColorStop(1, `${lineColor}00`);
   ctx.fillStyle = areaGrad;
   ctx.fill();
@@ -2021,7 +2279,7 @@ function drawShareCard(canvas, {
   ctx.lineWidth = 5;
   ctx.lineJoin = "round";
   ctx.shadowColor = `${lineColor}AA`;
-  ctx.shadowBlur = 18;
+  ctx.shadowBlur = 20;
   ctx.stroke();
   ctx.shadowBlur = 0;
 
@@ -2040,9 +2298,18 @@ function drawShareCard(canvas, {
 
   const lastX = xFor(curve.length - 1);
   const lastY = yFor(curve[curve.length - 1].pct);
+
+  [22, 14].forEach((rr, idx) => {
+    ctx.beginPath();
+    ctx.arc(lastX, lastY, rr, 0, Math.PI * 2);
+    ctx.strokeStyle = `${lineColor}${idx === 0 ? "22" : "44"}`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
   ctx.save();
   ctx.shadowColor = `${lineColor}CC`;
-  ctx.shadowBlur = 20;
+  ctx.shadowBlur = 22;
   ctx.beginPath();
   ctx.arc(lastX, lastY, 9, 0, Math.PI * 2);
   ctx.fillStyle = lineColor;
@@ -2057,34 +2324,33 @@ function drawShareCard(canvas, {
   const fmtRatioLocal = (n) => (Number.isFinite(n) ? n.toFixed(2) : "\u221e");
 
   const drawChipRow = (y, stats) => {
-    const chipH = 148;
+    const chipH = 172;
     const gap = 24;
     const chipW = (W - 160 - gap * 2) / 3;
     stats.forEach((s, i) => {
       const x = chartX + i * (chipW + gap);
-      roundRect(x, y, chipW, chipH, 18);
-      ctx.fillStyle = c.surface;
+      roundRect(x, y, chipW, chipH, 20);
+      const cardGrad = ctx.createLinearGradient(x, y, x, y + chipH);
+      cardGrad.addColorStop(0, c.surface);
+      cardGrad.addColorStop(1, `${c.surface}CC`);
+      ctx.fillStyle = cardGrad;
       ctx.fill();
-      ctx.strokeStyle = s.accent ? `${s.color}55` : c.border;
+      ctx.strokeStyle = s.accent ? `${s.color}66` : c.border;
       ctx.lineWidth = s.accent ? 2 : 1;
       ctx.stroke();
 
-      // top accent strip
-      ctx.save();
-      roundRect(x, y, chipW, 4, 2);
-      ctx.fillStyle = s.color;
-      ctx.globalAlpha = 0.85;
-      ctx.fill();
-      ctx.restore();
+      if (s.icon && ICONS[s.icon]) {
+        drawIconBadge(x + chipW / 2, y + 40, 22, s.color, ICONS[s.icon]);
+      }
 
       ctx.fillStyle = c.textFaint;
-      ctx.font = "600 16px sans-serif";
+      ctx.font = "600 15px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(s.label, x + chipW / 2, y + 40);
+      ctx.fillText(s.label, x + chipW / 2, y + 92);
 
       ctx.fillStyle = s.color;
-      ctx.font = `700 ${s.small ? 28 : 38}px monospace`;
-      ctx.fillText(s.value, x + chipW / 2, y + (s.small ? 90 : 94));
+      ctx.font = `700 ${s.small ? 26 : 34}px monospace`;
+      ctx.fillText(s.value, x + chipW / 2, y + (s.small ? 130 : 134));
       ctx.textAlign = "left";
     });
     return y + chipH;
@@ -2092,9 +2358,9 @@ function drawShareCard(canvas, {
 
   const row1Y = chartY + chartH + 44;
   const row1Bottom = drawChipRow(row1Y, [
-    { label: "WIN RATE", value: `${fmt(winRate, 0)}%`, color: c.text },
-    { label: "BEST STREAK", value: `+${bestStreak}`, color: c.green },
-    { label: "WORST STREAK", value: `${worstStreak}`, color: worstStreak < 0 ? c.red : c.text },
+    { label: "WIN RATE", value: `${fmt(winRate, 0)}%`, color: c.text, icon: "target" },
+    { label: "BEST STREAK", value: `+${bestStreak}`, color: c.green, icon: "arrowUp" },
+    { label: "WORST STREAK", value: `${worstStreak}`, color: worstStreak < 0 ? c.red : c.text, icon: "arrowDown" },
   ]);
 
   const row2Y = row1Bottom + 20;
@@ -2103,46 +2369,101 @@ function drawShareCard(canvas, {
       label: "DISCIPLINE STREAK",
       value: `${disciplineStreak}d`,
       color: disciplineStreak > 0 ? c.green : c.textMuted,
+      icon: "flame",
     },
     {
       label: "TOP SETUP",
       value: topSetup ? topSetup.label : "\u2014",
       color: c.text,
       small: !!topSetup,
+      icon: "star",
     },
     {
       label: "REVENGE TRADES",
       value: `${revengeCount}`,
       color: revengeCount > 0 ? c.red : c.green,
+      icon: "warning",
     },
   ]);
 
   const row3Y = row2Bottom + 20;
-  drawChipRow(row3Y, [
+  const row3Bottom = drawChipRow(row3Y, [
     {
       label: "PROFIT FACTOR",
       value: fmtRatioLocal(profitFactor),
       color: Number.isFinite(profitFactor) && profitFactor >= 1.5 ? c.green : c.goldBright,
       accent: true,
+      icon: "bolt",
     },
     {
       label: "TOP PAIR",
       value: topPair ? `${topPair.pair}` : "\u2014",
       color: c.goldBright,
       small: true,
+      icon: "swap",
     },
     {
       label: "AVG R:R",
       value: avgRR !== null ? avgRR.toFixed(1) : "\u2014",
       color: c.text,
+      icon: "ratio",
     },
   ]);
 
-  // Footer divider with a fading gradient
+  // ---- Performance Wheel: concentric radial rings ----
+  const wheelTitleY = row3Bottom + 56;
+  ctx.fillStyle = c.gold;
+  roundRect(chartX, wheelTitleY - 20, 5, 26, 3);
+  ctx.fill();
+  ctx.fillStyle = c.textMuted;
+  ctx.font = "600 22px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("PERFORMANCE WHEEL", chartX + 18, wheelTitleY);
+
+  const wheelCx = chartX + chartW / 2;
+  const wheelTop = wheelTitleY + 46;
+  const wheelRadius = 130;
+  const wheelCy = wheelTop + wheelRadius;
+
+  const winRateColor = winRate >= 50 ? c.green : c.red;
+  const pfColor = c.goldBright;
+  const discColor = disciplineStreak > 0 ? c.green : c.textMuted;
+
+  const winRateVal = Math.max(0, Math.min(1, winRate / 100));
+  const pfVal = Number.isFinite(profitFactor) ? Math.max(0, Math.min(1, profitFactor / 3)) : 1;
+  const discVal = Math.max(0, Math.min(1, disciplineStreak / 30));
+
+  paintRing(wheelCx, wheelCy, 130, 18, winRateVal, winRateColor);
+  paintRing(wheelCx, wheelCy, 98, 18, pfVal, pfColor);
+  paintRing(wheelCx, wheelCy, 66, 18, discVal, discColor);
+
+  const legendItems = [
+    { label: "WIN RATE", value: `${fmt(winRate, 0)}%`, color: winRateColor },
+    { label: "PROFIT FACTOR", value: fmtRatioLocal(profitFactor), color: pfColor },
+    { label: "DISCIPLINE", value: `${disciplineStreak}d`, color: discColor },
+  ];
+  const legendY = wheelCy + wheelRadius + 60;
+  const legendColW = chartW / 3;
+  legendItems.forEach((item, i) => {
+    const colCx = chartX + legendColW * i + legendColW / 2;
+    ctx.beginPath();
+    ctx.arc(colCx - 46, legendY - 6, 6, 0, Math.PI * 2);
+    ctx.fillStyle = item.color;
+    ctx.fill();
+    ctx.textAlign = "left";
+    ctx.fillStyle = c.textFaint;
+    ctx.font = "600 14px sans-serif";
+    ctx.fillText(item.label, colCx - 32, legendY - 1);
+    ctx.fillStyle = item.color;
+    ctx.font = "700 20px monospace";
+    ctx.fillText(item.value, colCx - 32, legendY + 24);
+  });
+  ctx.textAlign = "left";
+
   const footerY = H - 100;
   const divGrad = ctx.createLinearGradient(80, 0, W - 80, 0);
   divGrad.addColorStop(0, `${c.gold}00`);
-  divGrad.addColorStop(0.5, `${c.gold}88`);
+  divGrad.addColorStop(0.5, `${c.gold}99`);
   divGrad.addColorStop(1, `${c.gold}00`);
   ctx.strokeStyle = divGrad;
   ctx.lineWidth = 1.5;
