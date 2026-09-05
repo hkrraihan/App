@@ -926,6 +926,10 @@ function computeMonthlyStatementData(trades, journalEntries, customSetups, playb
   const cleanCheckins = monthCheckins.filter(isCleanCheckin).length;
   const cleanPct = monthCheckins.length ? Math.round((cleanCheckins / monthCheckins.length) * 100) : null;
 
+  const monthJournalRows = journalEntries.filter((r) => r.date && r.date.startsWith(monthPrefix));
+  const topPairs = journalPairFrequency(monthJournalRows, 1);
+  const mostTradedPair = topPairs.length ? topPairs[0] : null;
+
   return {
     monthPrefix,
     tradeCount: monthTrades.length,
@@ -944,6 +948,7 @@ function computeMonthlyStatementData(trades, journalEntries, customSetups, playb
     bestMood: insights.bestMood,
     cleanPct,
     checkinCount: monthCheckins.length,
+    mostTradedPair,
   };
 }
 
@@ -1678,7 +1683,7 @@ function journalConfidenceByDay(rows, maxDays = 30) {
   }));
 }
 
-function buildWeekRecap(weekTrades, startBal) {
+function buildWeekRecap(weekTrades, startBal, weekJournalRows = []) {
   let running = 0;
   const curve = [{ pct: 0 }];
   weekTrades.forEach((t) => {
@@ -1714,6 +1719,21 @@ function buildWeekRecap(weekTrades, startBal) {
 
   const rangeLabel = `${formatShortDate(weekTrades[0].ts)} \u2013 ${formatShortDate(weekTrades[weekTrades.length - 1].ts)}`;
 
+  const perf = computePerformanceMetrics(weekTrades);
+  const grade = computeDisciplineGrade(weekTrades);
+
+  const pairCounts = {};
+  weekJournalRows.forEach((r) => {
+    const p = (r.pair || "").trim().toUpperCase();
+    if (!p) return;
+    pairCounts[p] = (pairCounts[p] || 0) + 1;
+  });
+  const pairEntries = Object.entries(pairCounts).sort((a, b) => b[1] - a[1]);
+  const topPair = pairEntries.length ? { pair: pairEntries[0][0], count: pairEntries[0][1] } : null;
+
+  const rrValues = weekJournalRows.map((r) => parseFloat(r.rr)).filter((v) => Number.isFinite(v));
+  const avgRR = rrValues.length ? rrValues.reduce((s, v) => s + v, 0) / rrValues.length : null;
+
   return {
     curve,
     netPct,
@@ -1724,6 +1744,10 @@ function buildWeekRecap(weekTrades, startBal) {
     revengeCount,
     rangeLabel,
     tradeCount: weekTrades.length,
+    profitFactor: perf.profitFactor,
+    grade: grade.grade,
+    topPair,
+    avgRR,
   };
 }
 
@@ -1769,17 +1793,22 @@ function drawShareCard(canvas, {
   topSetup,
   revengeCount,
   disciplineStreak,
+  profitFactor,
+  grade,
+  topPair,
+  avgRR,
   tone,
   theme,
 }) {
   const W = 1080;
-  const H = 1500;
+  const H = 1650;
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d");
 
   const c = theme === "light" ? SHARE_COLORS.light : SHARE_COLORS.dark;
   const lineColor = tone === "bad" ? c.red : c.green;
+  const gradeColor = grade === "A" || grade === "B" ? c.green : grade === "D" || grade === "F" ? c.red : c.gold;
 
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
   bgGrad.addColorStop(0, c.bgFrom);
@@ -1807,6 +1836,29 @@ function drawShareCard(canvas, {
   ctx.textAlign = "left";
   ctx.fillText("LEDGER \u00b7 WEEKLY RECAP", 80, 128);
 
+  // Grade badge, top-right corner
+  if (grade && grade !== "N/A") {
+    const badgeCx = W - 140;
+    const badgeCy = 108;
+    ctx.beginPath();
+    ctx.arc(badgeCx, badgeCy, 46, 0, Math.PI * 2);
+    ctx.fillStyle = `${gradeColor}22`;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = gradeColor;
+    ctx.stroke();
+    ctx.fillStyle = gradeColor;
+    ctx.font = "700 44px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(grade, badgeCx, badgeCy + 16);
+    ctx.textAlign = "left";
+    ctx.fillStyle = c.textFaint;
+    ctx.font = "600 14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("GRADE", badgeCx, badgeCy + 68);
+    ctx.textAlign = "left";
+  }
+
   ctx.fillStyle = c.text;
   ctx.font = "700 58px monospace";
   ctx.fillText("MY TRADING WEEK", 80, 196);
@@ -1825,7 +1877,7 @@ function drawShareCard(canvas, {
   const chartX = 80;
   const chartY = 440;
   const chartW = W - 160;
-  const chartH = 340;
+  const chartH = 320;
 
   roundRect(chartX, chartY, chartW, chartH, 20);
   ctx.fillStyle = c.surface;
@@ -1835,7 +1887,7 @@ function drawShareCard(canvas, {
   ctx.stroke();
 
   const padX = 40;
-  const padY = 40;
+  const padY = 36;
   const plotX = chartX + padX;
   const plotY = chartY + padY;
   const plotW = chartW - padX * 2;
@@ -1870,7 +1922,7 @@ function drawShareCard(canvas, {
   ctx.lineTo(xFor(curve.length - 1), yFor(0));
   ctx.closePath();
   const areaGrad = ctx.createLinearGradient(0, plotY, 0, plotY + plotH);
-  areaGrad.addColorStop(0, `${lineColor}33`);
+  areaGrad.addColorStop(0, `${lineColor}55`);
   areaGrad.addColorStop(1, `${lineColor}00`);
   ctx.fillStyle = areaGrad;
   ctx.fill();
@@ -1883,24 +1935,42 @@ function drawShareCard(canvas, {
     else ctx.lineTo(x, y);
   });
   ctx.strokeStyle = lineColor;
-  ctx.lineWidth = 4;
+  ctx.lineWidth = 5;
   ctx.lineJoin = "round";
+  ctx.shadowColor = `${lineColor}88`;
+  ctx.shadowBlur = 12;
   ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  curve.forEach((p, i) => {
+    if (i === 0) return;
+    const x = xFor(i);
+    const y = yFor(p.pct);
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = c.bgTo;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = lineColor;
+    ctx.stroke();
+  });
 
   const lastX = xFor(curve.length - 1);
   const lastY = yFor(curve[curve.length - 1].pct);
   ctx.beginPath();
-  ctx.arc(lastX, lastY, 8, 0, Math.PI * 2);
+  ctx.arc(lastX, lastY, 9, 0, Math.PI * 2);
   ctx.fillStyle = lineColor;
   ctx.fill();
   ctx.beginPath();
-  ctx.arc(lastX, lastY, 8, 0, Math.PI * 2);
+  ctx.arc(lastX, lastY, 9, 0, Math.PI * 2);
   ctx.strokeStyle = c.dotRing;
   ctx.lineWidth = 3;
   ctx.stroke();
 
+  const fmtRatioLocal = (n) => (Number.isFinite(n) ? n.toFixed(2) : "\u221e");
+
   const drawChipRow = (y, stats) => {
-    const chipH = 150;
+    const chipH = 148;
     const gap = 24;
     const chipW = (W - 160 - gap * 2) / 3;
     stats.forEach((s, i) => {
@@ -1908,8 +1978,8 @@ function drawShareCard(canvas, {
       roundRect(x, y, chipW, chipH, 18);
       ctx.fillStyle = c.surface;
       ctx.fill();
-      ctx.strokeStyle = c.border;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = s.accent ? `${s.color}55` : c.border;
+      ctx.lineWidth = s.accent ? 2 : 1;
       ctx.stroke();
 
       ctx.fillStyle = c.textFaint;
@@ -1918,22 +1988,22 @@ function drawShareCard(canvas, {
       ctx.fillText(s.label, x + chipW / 2, y + 40);
 
       ctx.fillStyle = s.color;
-      ctx.font = `700 ${s.small ? 30 : 40}px monospace`;
-      ctx.fillText(s.value, x + chipW / 2, y + (s.small ? 92 : 96));
+      ctx.font = `700 ${s.small ? 28 : 38}px monospace`;
+      ctx.fillText(s.value, x + chipW / 2, y + (s.small ? 90 : 94));
       ctx.textAlign = "left";
     });
     return y + chipH;
   };
 
-  const row1Y = chartY + chartH + 48;
+  const row1Y = chartY + chartH + 44;
   const row1Bottom = drawChipRow(row1Y, [
     { label: "WIN RATE", value: `${fmt(winRate, 0)}%`, color: c.text },
     { label: "BEST STREAK", value: `+${bestStreak}`, color: c.green },
     { label: "WORST STREAK", value: `${worstStreak}`, color: worstStreak < 0 ? c.red : c.text },
   ]);
 
-  const row2Y = row1Bottom + 24;
-  drawChipRow(row2Y, [
+  const row2Y = row1Bottom + 20;
+  const row2Bottom = drawChipRow(row2Y, [
     {
       label: "DISCIPLINE STREAK",
       value: `${disciplineStreak}d`,
@@ -1949,6 +2019,27 @@ function drawShareCard(canvas, {
       label: "REVENGE TRADES",
       value: `${revengeCount}`,
       color: revengeCount > 0 ? c.red : c.green,
+    },
+  ]);
+
+  const row3Y = row2Bottom + 20;
+  drawChipRow(row3Y, [
+    {
+      label: "PROFIT FACTOR",
+      value: fmtRatioLocal(profitFactor),
+      color: Number.isFinite(profitFactor) && profitFactor >= 1.5 ? c.green : c.goldBright,
+      accent: true,
+    },
+    {
+      label: "TOP PAIR",
+      value: topPair ? `${topPair.pair}` : "\u2014",
+      color: c.goldBright,
+      small: true,
+    },
+    {
+      label: "AVG R:R",
+      value: avgRR !== null ? avgRR.toFixed(1) : "\u2014",
+      color: c.text,
     },
   ]);
 
@@ -3432,7 +3523,13 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       return;
     }
 
-    const recap = buildWeekRecap(weekTrades, startBal);
+    const weekJournalRows = journalEntries.filter((r) => {
+      if (!r.date) return false;
+      const ts = new Date(`${r.date}T00:00:00`).getTime();
+      return now - ts <= WEEK_MS;
+    });
+
+    const recap = buildWeekRecap(weekTrades, startBal, weekJournalRows);
     const discipline = computeDisciplineStreak(trades);
 
     try {
@@ -3451,6 +3548,10 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         topSetup: recap.topSetup,
         revengeCount: recap.revengeCount,
         disciplineStreak: discipline.current,
+        profitFactor: recap.profitFactor,
+        grade: recap.grade,
+        topPair: recap.topPair,
+        avgRR: recap.avgRR,
         tone: recap.netPct >= 0 ? "good" : "bad",
         theme,
       });
@@ -3492,20 +3593,35 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       return;
     }
 
-    const recap = buildWeekRecap(weekTrades, startBal);
+    const weekJournalRows = journalEntries.filter((r) => {
+      if (!r.date) return false;
+      const ts = new Date(`${r.date}T00:00:00`).getTime();
+      return now - ts <= WEEK_MS;
+    });
+
+    const recap = buildWeekRecap(weekTrades, startBal, weekJournalRows);
     const discipline = computeDisciplineStreak(trades);
+    const fmtRatioLocal = (n) => (Number.isFinite(n) ? n.toFixed(2) : "\u221e");
 
     const lines = [
       `My Trading Week \u2014 ${recap.rangeLabel}`,
+      `Grade: ${recap.grade}`,
       `Trades: ${recap.tradeCount}`,
       `Win Rate: ${fmt(recap.winRate, 0)}%`,
       `Net Return: ${fmtPct(recap.netPct)}`,
+      `Profit Factor: ${fmtRatioLocal(recap.profitFactor)}`,
       `Best Streak: +${recap.bestStreak}    Worst Streak: ${recap.worstStreak}`,
       `Discipline Streak: ${discipline.current} day${discipline.current === 1 ? "" : "s"} (best: ${discipline.best})`,
       `Revenge Trades This Week: ${recap.revengeCount}`,
     ];
     if (recap.topSetup) {
       lines.push(`Top Setup: ${recap.topSetup.label} (${recap.topSetup.count}x)`);
+    }
+    if (recap.topPair) {
+      lines.push(`Most Traded Pair: ${recap.topPair.pair} (${recap.topPair.count}x)`);
+    }
+    if (recap.avgRR !== null) {
+      lines.push(`Average R:R: ${recap.avgRR.toFixed(1)}`);
     }
     lines.push("", "\u2014 Ledger \u00b7 no dollar amounts, just the process");
     const text = lines.join("\n");
@@ -9626,6 +9742,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
                       ["Discipline Streak", `${data.discipline.current}d (best ${data.discipline.best}d)`],
                       ["Journal Completeness", `${data.completeness}%`],
                       ["Playbook Clean Days", data.cleanPct === null ? "N/A" : `${data.cleanPct}% (${data.checkinCount} check-ins)`],
+                      ["Most Traded Pair", data.mostTradedPair ? `${data.mostTradedPair.pair} (${data.mostTradedPair.count}x)` : "N/A"],
                     ].map(([l, v]) => (
                       <div key={l} className="flex justify-between" style={{ fontSize: "11px", padding: "3px 0", borderBottom: `1px solid ${S.border}` }}>
                         <span style={{ color: S.muted }}>{l}</span>
