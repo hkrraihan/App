@@ -872,6 +872,7 @@ const STORAGE_KEY = "equity-curve:trades";
 const STORAGE_BAL_KEY = "equity-curve:starting-balance";
 const NEWS_STORAGE_KEY = "news:events:v4";
 const THEME_STORAGE_KEY = "ledger:theme";
+const GOALS_STORAGE_KEY = "ledger:goals";
 
 const PROFIT_TARGET_OPTIONS = [5, 6, 8, 10, 12];
 
@@ -891,6 +892,92 @@ function formatCountdown(ms) {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${mins}m`;
   return `${mins}m`;
+}
+
+function computeGoalProgress(trades, startBal, period) {
+  if (!(startBal > 0)) return null;
+  const now = new Date();
+  let periodStart;
+  if (period === "week") {
+    const day = now.getDay();
+    const diffToMonday = day === 0 ? 6 : day - 1;
+    periodStart = new Date(now);
+    periodStart.setDate(now.getDate() - diffToMonday);
+    periodStart.setHours(0, 0, 0, 0);
+  } else {
+    periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  }
+  const periodTrades = trades.filter((t) => t.ts >= periodStart.getTime());
+  const netPnl = periodTrades.reduce((s, t) => s + t.pnl, 0);
+  const pct = (netPnl / startBal) * 100;
+  return { count: periodTrades.length, netPnl, pct, periodStart };
+}
+
+const COMMON_ECONOMIC_EVENTS = [
+  { name: "Non-Farm Payrolls (NFP)", impact: "high", time: "13:30", rule: "firstFriday" },
+  { name: "CPI Release", impact: "high", time: "13:30", rule: "day", day: 13 },
+  { name: "FOMC Rate Decision", impact: "high", time: "19:00", rule: "day", day: 18 },
+  { name: "Unemployment Claims", impact: "medium", time: "13:30", rule: "everyThursday" },
+];
+
+function firstFridayOfMonth(year, monthIdx) {
+  const d = new Date(year, monthIdx, 1);
+  const day = d.getDay();
+  const offset = (5 - day + 7) % 7;
+  d.setDate(1 + offset);
+  return d;
+}
+
+function allThursdaysOfMonth(year, monthIdx) {
+  const dates = [];
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(year, monthIdx, day);
+    if (d.getDay() === 4) dates.push(d);
+  }
+  return dates;
+}
+
+function buildCommonEventsForMonth(year, monthIdx) {
+  const events = [];
+  COMMON_ECONOMIC_EVENTS.forEach((tpl) => {
+    if (tpl.rule === "firstFriday") {
+      const d = firstFridayOfMonth(year, monthIdx);
+      events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
+    } else if (tpl.rule === "day") {
+      const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+      const day = Math.min(tpl.day, daysInMonth);
+      const d = new Date(year, monthIdx, day);
+      events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
+    } else if (tpl.rule === "everyThursday") {
+      allThursdaysOfMonth(year, monthIdx).forEach((d) => {
+        events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
+      });
+    }
+  });
+  return events;
+}
+
+const SW_SCRIPT = `
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', () => self.clients.claim());
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    self.registration.showNotification(event.data.title, event.data.options);
+  }
+});
+`;
+
+async function registerAlarmServiceWorker() {
+  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return null;
+  try {
+    const blob = new Blob([SW_SCRIPT], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+    const registration = await navigator.serviceWorker.register(url);
+    return registration;
+  } catch (err) {
+    return null;
+  }
 }
 
 function computeRevengeIds(trades) {
@@ -2021,6 +2108,50 @@ const openPaywall = (reason) => {
     return () => clearInterval(id);
   }, []);
 
+  const [goals, setGoals] = useState({ weeklyTargetPct: "", monthlyTargetPct: "" });
+  const [goalsLoaded, setGoalsLoaded] = useState(false);
+  const [quickAddMsg, setQuickAddMsg] = useState("");
+  const [swRegistration, setSwRegistration] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await window.storage.get(GOALS_STORAGE_KEY, false);
+        if (cancelled) return;
+        if (res && res.value) {
+          const parsed = JSON.parse(res.value);
+          if (parsed && typeof parsed === "object") {
+            setGoals({ weeklyTargetPct: parsed.weeklyTargetPct || "", monthlyTargetPct: parsed.monthlyTargetPct || "" });
+          }
+        }
+      } catch (err) {
+        // non-critical, fail silently
+      } finally {
+        if (!cancelled) setGoalsLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const reg = await registerAlarmServiceWorker();
+      if (!cancelled) setSwRegistration(reg);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistGoals = async (next) => {
+    setGoals(next);
+    try {
+      await window.storage.set(GOALS_STORAGE_KEY, JSON.stringify(next), false);
+    } catch (err) {
+      // non-critical, fail silently
+    }
+  };
+
   const [copyMsg, setCopyMsg] = useState("");
   const [copyFallbackText, setCopyFallbackText] = useState("");
 
@@ -2381,17 +2512,28 @@ const openPaywall = (reason) => {
     setRingingEvent(ev);
     startBeep();
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const notifOptions = {
+        body: `Scheduled for ${ev.time} today \u2014 open Ledger to dismiss`,
+        tag: `ledger-alarm-${ev.id}`,
+      };
+      if (swRegistration && swRegistration.active) {
+        try {
+          swRegistration.active.postMessage({
+            type: "SHOW_NOTIFICATION",
+            title: `\u23F0 ${ev.name}`,
+            options: notifOptions,
+          });
+        } catch (err) {
+          // fall through to the plain Notification below
+        }
+      }
       try {
-        new Notification(`\u23F0 ${ev.name}`, {
-          body: `Scheduled for ${ev.time} today \u2014 open Ledger to dismiss`,
-          tag: `ledger-alarm-${ev.id}`,
-        });
+        new Notification(`\u23F0 ${ev.name}`, notifOptions);
       } catch (err) {
         // ignore \u2014 sound + in-app modal still ring
       }
     }
   };
-
   const dismissAlarm = () => {
     stopBeep();
     setRingingEvent(null);
@@ -2453,6 +2595,30 @@ const openPaywall = (reason) => {
 
   const deleteNewsEvent = (id) => {
     persistNews(newsEvents.filter((e) => e.id !== id));
+  };
+
+  const quickAddCommonEvents = () => {
+    setQuickAddMsg("");
+    const now = new Date();
+    const candidates = buildCommonEventsForMonth(now.getFullYear(), now.getMonth());
+    const existingKeys = new Set(newsEvents.map((e) => `${e.name}|${e.date}`));
+    const toAdd = candidates
+      .filter((c) => !existingKeys.has(`${c.name}|${c.date}`))
+      .map((c) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: c.name,
+        impact: c.impact,
+        date: c.date,
+        time: c.time,
+        alarm: true,
+        rung: false,
+      }));
+    if (toAdd.length === 0) {
+      setQuickAddMsg("Already added, or none apply this month.");
+      return;
+    }
+    persistNews([...newsEvents, ...toAdd]);
+    setQuickAddMsg(`Added ${toAdd.length} common event${toAdd.length === 1 ? "" : "s"} for this month.`);
   };
 
   const persistTrades = async (next) => {
@@ -4186,11 +4352,6 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
     );
   }
 
-  {!isPro && trades.length > FREE_CURVE_TRADE_LIMIT && (
-  <button type="button" onClick={() => openPaywall(`You have ${trades.length} trades logged — upgrade to see your full history.`)} className={`w-full text-left rounded-lg px-3 py-2 mb-3 ${TAP}`} style={{ background: `${palette.gold}14`, border: `1px solid ${palette.gold}` }}>
-    <span style={{ color: palette.gold, fontSize: "12px" }}>Showing last {FREE_CURVE_TRADE_LIMIT} trades — tap to see full history with Pro</span>
-  </button>
-)}
   if (activeTab === "curve") {
     const startBal = num(startingBalance);
     const wins = trades.filter((t) => t.pnl > 0);
@@ -4209,8 +4370,6 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       peak = Math.max(peak, running);
       maxDrawdown = Math.max(maxDrawdown, peak - running);
       chartData.push({ trade: i + 1, equity: running });
-    const visibleTrades = isPro ? trades : trades.slice(-FREE_CURVE_TRADE_LIMIT);
-// then use visibleTrades everywhere chartData/tradesByDay currently uses `trades`
     });
 
     let bestStreak = 0;
@@ -4240,8 +4399,6 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
       if (!tradesByDay[k]) tradesByDay[k] = { total: 0, trades: [] };
       tradesByDay[k].total += t.pnl;
       tradesByDay[k].trades.push(t);
-    const visibleTrades = isPro ? trades : trades.slice(-FREE_CURVE_TRADE_LIMIT);
-// then use visibleTrades everywhere chartData/tradesByDay currently uses `trades`
     });
 
     const viewYear = calMonth.getFullYear();
@@ -4287,6 +4444,19 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           }
           tone={netPnl > 0 ? "good" : netPnl < 0 ? "bad" : undefined}
         />
+
+        {!isPro && trades.length > FREE_CURVE_TRADE_LIMIT && (
+          <button
+            type="button"
+            onClick={() => openPaywall(`You have ${trades.length} trades logged — upgrade to see your full history.`)}
+            className={`w-full text-left rounded-lg px-3 py-2 mb-4 ${TAP}`}
+            style={{ background: `${palette.gold}14`, border: `1px solid ${palette.gold}` }}
+          >
+            <span style={{ color: palette.gold, fontSize: "12px" }}>
+              Showing last {FREE_CURVE_TRADE_LIMIT} trades — tap to see full history with Pro
+            </span>
+          </button>
+        )}
 
         {trades.length > 0 && (
           <div
@@ -4377,6 +4547,73 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
             <p className="text-xs mt-2" style={{ color: palette.textFaint }}>
               Consecutive trading days with no revenge trade (opened within {REVENGE_WINDOW_MINUTES} minutes of a
               loss) tracks behavior, not P&amp;L.
+            </p>
+          )}
+        </div>
+
+        <span
+          className="block mb-1.5 uppercase"
+          style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
+        >
+          Goals
+        </span>
+        <div
+          className="rounded-2xl p-4 mb-4"
+          style={{ background: palette.surface, border: `1px solid ${palette.border}`, boxShadow: palette.shadow, transition: THEME_TRANSITION }}
+        >
+          {[
+            { key: "weeklyTargetPct", period: "week", label: "This Week" },
+            { key: "monthlyTargetPct", period: "month", label: "This Month" },
+          ].map(({ key, period, label }, idx) => {
+            const targetPct = num(goals[key]);
+            const progress = computeGoalProgress(trades, startBal, period);
+            const hasTarget = goals[key] !== "" && targetPct > 0;
+            const pct = progress ? progress.pct : 0;
+            const progressToward = hasTarget && targetPct > 0 ? Math.max(0, Math.min(100, (pct / targetPct) * 100)) : 0;
+            const met = hasTarget && pct >= targetPct;
+            return (
+              <div key={key} style={{ marginBottom: idx === 0 ? "16px" : 0 }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span style={{ color: palette.text, fontSize: "13px", fontWeight: 600 }}>{label}</span>
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: "12px",
+                      color: !startBal ? palette.textFaint : met ? palette.green : pct < 0 ? palette.red : palette.textMuted,
+                    }}
+                  >
+                    {startBal ? `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%` : "N/A"}
+                    {hasTarget ? ` / ${targetPct}%` : ""}
+                  </span>
+                </div>
+                {hasTarget && (
+                  <div style={{ height: "6px", borderRadius: "999px", background: palette.field, overflow: "hidden", marginBottom: "6px" }}>
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${progressToward}%`,
+                        background: met ? palette.green : palette.gold,
+                        borderRadius: "999px",
+                        transition: "width 0.3s ease",
+                      }}
+                    />
+                  </div>
+                )}
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={goals[key]}
+                  onChange={(e) => persistGoals({ ...goals, [key]: e.target.value })}
+                  placeholder="Set a target % (e.g. 10)"
+                  className="w-full rounded-lg px-3 py-2 bg-transparent outline-none"
+                  style={{ background: palette.field, border: `1px solid ${palette.border}`, color: palette.text, fontFamily: mono, fontSize: "13px" }}
+                />
+              </div>
+            );
+          })}
+          {!startBal && (
+            <p className="text-xs mt-3" style={{ color: palette.textFaint }}>
+              Set a starting balance below so goal progress can be calculated as a percentage.
             </p>
           )}
         </div>
@@ -5290,7 +5527,13 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             <button
               key={s.id}
               type="button"
-              onClick={() => setInsightsSubTab(s.id)}
+              onClick={() => {
+                if (!isPro && (s.id === "behavior" || s.id === "journal")) {
+                  openPaywall("Behavior and Journal analytics are part of Ledger Pro.");
+                  return;
+                }
+                setInsightsSubTab(s.id);
+              }}
               className={`flex-1 px-3 py-2 rounded-full transition-colors ${TAP}`}
               style={{
                 background: active ? palette.gold : palette.field,
@@ -5301,13 +5544,6 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
                 fontWeight: 600,
                 whiteSpace: "nowrap",
               }}
-              onClick={() => {
-                  if (!isPro && (s.id === "behavior" || s.id === "journal")) {
-                openPaywall("Behavior and Journal analytics are part of Ledger Pro.");
-                return;
-                        }
-             setInsightsSubTab(s.id);
-                                }}
             >
               {s.label}
             </button>
@@ -8253,6 +8489,34 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             app rings (sound + notification) {ALARM_LEAD_MINUTES} minutes before, but only while it's open in your
             browser it can't set a true system alarm, so keep the tab open (or this installed as a
             home-screen app) close to the event.
+          </p>
+
+          <button
+            type="button"
+            onClick={quickAddCommonEvents}
+            className={`w-full flex items-center justify-center gap-2 rounded-lg py-3 mb-2 ${TAP}`}
+            style={{
+              background: palette.field,
+              border: `1px solid ${palette.border}`,
+              color: palette.text,
+              fontFamily: mono,
+              fontSize: "13px",
+              fontWeight: 600,
+              transition: `${THEME_TRANSITION}, transform 0.15s ease`,
+            }}
+          >
+            <Newspaper size={16} />
+            Quick-Add This Month's Common Events
+          </button>
+          {quickAddMsg && (
+            <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
+              {quickAddMsg}
+            </p>
+          )}
+          <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
+            Adds common recurring high-impact events (NFP, CPI, FOMC, jobless claims) for the current month using
+            typical release patterns \u2014 always double-check exact times against an official calendar, since
+            these are estimates, not a live feed.
           </p>
 
           <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
