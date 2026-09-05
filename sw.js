@@ -1,6 +1,6 @@
-const CACHE_NAME = "ledger-shell-v1";
+const CACHE_NAME = "ledger-cache-v1";
 
-const APP_SHELL = [
+const CORE_ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
@@ -12,41 +12,38 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
+      .then((cache) => cache.addAll(CORE_ASSETS))
+      .catch(() => {})
   );
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-      )
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
 
-// Same-origin files: cache-first, refreshed in the background (stale-while-revalidate).
-// Cross-origin CDN requests (Tailwind, Babel, esm.sh) are left alone — the browser's
-// own HTTP cache handles those.
+// Cache-first for same-origin app-shell files, network for everything else
+// (CDN scripts, live FX rates, etc. are left alone so they always stay fresh).
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
+  if (event.request.method !== "GET") return;
 
-  const url = new URL(req.url);
+  const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const networkFetch = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+    caches.match(event.request).then((cached) => {
+      const networkFetch = fetch(event.request)
+        .then((response) => {
+          if (response && response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
           }
-          return res;
+          return response;
         })
         .catch(() => cached);
       return cached || networkFetch;
