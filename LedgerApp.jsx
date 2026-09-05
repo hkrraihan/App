@@ -926,8 +926,7 @@ function computeMonthlyStatementData(trades, journalEntries, customSetups, playb
   const cleanCheckins = monthCheckins.filter(isCleanCheckin).length;
   const cleanPct = monthCheckins.length ? Math.round((cleanCheckins / monthCheckins.length) * 100) : null;
 
-  const monthJournalRows = journalEntries.filter((r) => r.date && r.date.startsWith(monthPrefix));
-  const topPairs = journalPairFrequency(monthJournalRows, 1);
+  const topPairs = tradePairFrequency(monthTrades, 1);
   const mostTradedPair = topPairs.length ? topPairs[0] : null;
 
   return {
@@ -1546,6 +1545,19 @@ function journalPairFrequency(rows, max = 8) {
   const counts = {};
   rows.forEach((r) => {
     const p = (r.pair || "").trim().toUpperCase();
+    if (!p) return;
+    counts[p] = (counts[p] || 0) + 1;
+  });
+  return Object.keys(counts)
+    .map((pair) => ({ pair, count: counts[pair] }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, max);
+}
+
+function tradePairFrequency(trades, max = 8) {
+  const counts = {};
+  trades.forEach((t) => {
+    const p = (t.pair || "").trim().toUpperCase();
     if (!p) return;
     counts[p] = (counts[p] || 0) + 1;
   });
@@ -9237,6 +9249,12 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
         @media print {
           body * { visibility: hidden; }
           #ledger-statement, #ledger-statement * { visibility: visible; }
+          .statement-print-wrapper {
+            position: static !important;
+            overflow: visible !important;
+            background: none !important;
+            display: block !important;
+          }
           #ledger-statement { position: absolute; top: 0; left: 0; width: 100%; }
           .statement-no-print { display: none !important; }
         }
@@ -9621,7 +9639,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
 
         return (
           <div
-            className="fixed inset-0 flex items-start justify-center z-50 p-4 statement-no-print"
+            className="fixed inset-0 flex items-start justify-center z-50 p-4 statement-print-wrapper"
             style={{ background: "rgba(5,7,12,0.9)", overflowY: "auto" }}
             onClick={() => setStatementMonth(null)}
           >
@@ -9663,7 +9681,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
                 <div className="flex items-start justify-between mb-1" style={{ borderBottom: `2px solid ${S.gold}`, paddingBottom: "12px" }}>
                   <div>
                     <div style={{ fontFamily: mono, fontSize: "10px", letterSpacing: "0.14em", color: S.gold, textTransform: "uppercase" }}>
-                      Ledger \u00b7 Monthly Statement
+                      Ledger — Monthly Statement
                     </div>
                     <div style={{ fontFamily: mono, fontSize: "1.4rem", fontWeight: 700, color: S.text }}>
                       {MONTH_NAMES[statementMonth.monthIdx]} {statementMonth.year}
