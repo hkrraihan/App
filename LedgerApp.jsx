@@ -1822,11 +1822,25 @@ function drawShareCard(canvas, {
   const lineColor = tone === "bad" ? c.red : c.green;
   const gradeColor = grade === "A" || grade === "B" ? c.green : grade === "D" || grade === "F" ? c.red : c.gold;
 
+  // Base background gradient
   const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
   bgGrad.addColorStop(0, c.bgFrom);
   bgGrad.addColorStop(1, c.bgTo);
   ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, W, H);
+
+  // Ambient glow spots for depth
+  const glow1 = ctx.createRadialGradient(W * 0.15, 120, 0, W * 0.15, 120, 520);
+  glow1.addColorStop(0, `${lineColor}22`);
+  glow1.addColorStop(1, `${lineColor}00`);
+  ctx.fillStyle = glow1;
+  ctx.fillRect(0, 0, W, H * 0.45);
+
+  const glow2 = ctx.createRadialGradient(W * 0.9, 80, 0, W * 0.9, 80, 460);
+  glow2.addColorStop(0, `${c.gold}1E`);
+  glow2.addColorStop(1, `${c.gold}00`);
+  ctx.fillStyle = glow2;
+  ctx.fillRect(0, 0, W, H * 0.4);
 
   const roundRect = (x, y, w, h, r) => {
     ctx.beginPath();
@@ -1838,24 +1852,49 @@ function drawShareCard(canvas, {
     ctx.closePath();
   };
 
+  // Outer panel border
   roundRect(36, 36, W - 72, H - 72, 28);
   ctx.strokeStyle = c.border;
   ctx.lineWidth = 2;
   ctx.stroke();
 
+  // Corner accent brackets \u2014 terminal / HUD aesthetic
+  const drawCorner = (x, y, dx, dy) => {
+    const len = 34;
+    ctx.strokeStyle = c.gold;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(x, y + dy * len);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + dx * len, y);
+    ctx.stroke();
+  };
+  drawCorner(36, 36, 1, 1);
+  drawCorner(W - 36, 36, -1, 1);
+  drawCorner(36, H - 36, 1, -1);
+  drawCorner(W - 36, H - 36, -1, -1);
+
+  // Header accent bar + label
+  ctx.fillStyle = c.gold;
+  roundRect(80, 96, 5, 26, 3);
+  ctx.fill();
   ctx.fillStyle = c.gold;
   ctx.font = "600 26px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("LEDGER \u00b7 WEEKLY RECAP", 80, 128);
+  ctx.fillText("LEDGER \u00b7 WEEKLY RECAP", 98, 118);
 
-  // Grade badge, top-right corner
+  // Grade badge, top-right corner, with a soft glow ring
   if (grade && grade !== "N/A") {
     const badgeCx = W - 140;
     const badgeCy = 108;
+    ctx.save();
+    ctx.shadowColor = `${gradeColor}88`;
+    ctx.shadowBlur = 26;
     ctx.beginPath();
     ctx.arc(badgeCx, badgeCy, 46, 0, Math.PI * 2);
     ctx.fillStyle = `${gradeColor}22`;
     ctx.fill();
+    ctx.restore();
     ctx.lineWidth = 3;
     ctx.strokeStyle = gradeColor;
     ctx.stroke();
@@ -1882,21 +1921,53 @@ function drawShareCard(canvas, {
   ctx.fillStyle = c.textFaint;
   ctx.font = "600 20px sans-serif";
   ctx.fillText("NET RETURN", 80, 300);
+
+  // Net return number with a colored glow
+  ctx.save();
+  ctx.shadowColor = `${lineColor}AA`;
+  ctx.shadowBlur = 28;
   ctx.fillStyle = lineColor;
   ctx.font = "700 96px monospace";
   ctx.fillText(fmtPct(netPct), 80, 390);
+  ctx.restore();
+
+  // Direction arrow next to the number
+  ctx.font = "700 96px monospace";
+  const numWidth = ctx.measureText(fmtPct(netPct)).width;
+  const arrowX = 80 + numWidth + 30;
+  const arrowUp = netPct >= 0;
+  const arrowCenterY = 357;
+  const half = 16;
+  ctx.fillStyle = lineColor;
+  ctx.beginPath();
+  if (arrowUp) {
+    ctx.moveTo(arrowX, arrowCenterY + half);
+    ctx.lineTo(arrowX + 28, arrowCenterY + half);
+    ctx.lineTo(arrowX + 14, arrowCenterY - half);
+  } else {
+    ctx.moveTo(arrowX, arrowCenterY - half);
+    ctx.lineTo(arrowX + 28, arrowCenterY - half);
+    ctx.lineTo(arrowX + 14, arrowCenterY + half);
+  }
+  ctx.closePath();
+  ctx.fill();
 
   const chartX = 80;
   const chartY = 440;
   const chartW = W - 160;
   const chartH = 320;
 
+  // Chart panel with a soft colored glow border
   roundRect(chartX, chartY, chartW, chartH, 20);
   ctx.fillStyle = c.surface;
   ctx.fill();
-  ctx.strokeStyle = c.border;
-  ctx.lineWidth = 1;
+  ctx.save();
+  ctx.shadowColor = `${lineColor}33`;
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = `${lineColor}55`;
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+  ctx.restore();
 
   const padX = 40;
   const padY = 36;
@@ -1934,7 +2005,7 @@ function drawShareCard(canvas, {
   ctx.lineTo(xFor(curve.length - 1), yFor(0));
   ctx.closePath();
   const areaGrad = ctx.createLinearGradient(0, plotY, 0, plotY + plotH);
-  areaGrad.addColorStop(0, `${lineColor}55`);
+  areaGrad.addColorStop(0, `${lineColor}66`);
   areaGrad.addColorStop(1, `${lineColor}00`);
   ctx.fillStyle = areaGrad;
   ctx.fill();
@@ -1949,8 +2020,8 @@ function drawShareCard(canvas, {
   ctx.strokeStyle = lineColor;
   ctx.lineWidth = 5;
   ctx.lineJoin = "round";
-  ctx.shadowColor = `${lineColor}88`;
-  ctx.shadowBlur = 12;
+  ctx.shadowColor = `${lineColor}AA`;
+  ctx.shadowBlur = 18;
   ctx.stroke();
   ctx.shadowBlur = 0;
 
@@ -1969,10 +2040,14 @@ function drawShareCard(canvas, {
 
   const lastX = xFor(curve.length - 1);
   const lastY = yFor(curve[curve.length - 1].pct);
+  ctx.save();
+  ctx.shadowColor = `${lineColor}CC`;
+  ctx.shadowBlur = 20;
   ctx.beginPath();
   ctx.arc(lastX, lastY, 9, 0, Math.PI * 2);
   ctx.fillStyle = lineColor;
   ctx.fill();
+  ctx.restore();
   ctx.beginPath();
   ctx.arc(lastX, lastY, 9, 0, Math.PI * 2);
   ctx.strokeStyle = c.dotRing;
@@ -1993,6 +2068,14 @@ function drawShareCard(canvas, {
       ctx.strokeStyle = s.accent ? `${s.color}55` : c.border;
       ctx.lineWidth = s.accent ? 2 : 1;
       ctx.stroke();
+
+      // top accent strip
+      ctx.save();
+      roundRect(x, y, chipW, 4, 2);
+      ctx.fillStyle = s.color;
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.restore();
 
       ctx.fillStyle = c.textFaint;
       ctx.font = "600 16px sans-serif";
@@ -2054,6 +2137,19 @@ function drawShareCard(canvas, {
       color: c.text,
     },
   ]);
+
+  // Footer divider with a fading gradient
+  const footerY = H - 100;
+  const divGrad = ctx.createLinearGradient(80, 0, W - 80, 0);
+  divGrad.addColorStop(0, `${c.gold}00`);
+  divGrad.addColorStop(0.5, `${c.gold}88`);
+  divGrad.addColorStop(1, `${c.gold}00`);
+  ctx.strokeStyle = divGrad;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(80, footerY);
+  ctx.lineTo(W - 80, footerY);
+  ctx.stroke();
 
   ctx.fillStyle = c.textFaint;
   ctx.font = "400 20px monospace";
