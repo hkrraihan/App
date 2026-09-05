@@ -1,95 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0A0E16" />
-<title>Ledger</title>
-<meta name="description" content="Trade math calculator, equity curve tracker, and trading journal." />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0A0E16" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Ledger</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icon.png" />
+  <link rel="apple-touch-icon" href="./icon.png" />
 
-<link rel="manifest" href="manifest.json" />
-<link rel="icon" href="icon.png" type="image/png" />
-<link rel="apple-touch-icon" href="icon.png" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="apple-mobile-web-app-title" content="Ledger" />
+  <!-- Tailwind (utility classes used throughout LedgerApp.jsx) -->
+  <script src="https://cdn.tailwindcss.com"></script>
 
-<!-- Tailwind (utility classes used throughout LedgerApp.jsx) -->
-<script src="https://cdn.tailwindcss.com"></script>
+  <!-- In-browser JSX transform, since we're not running a build step -->
+  <script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
 
-<!-- Import map: lets bare imports like "react" / "recharts" / "lucide-react"
-     inside LedgerApp.jsx resolve to CDN builds, all sharing one React copy. -->
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.3.1",
-    "react-dom": "https://esm.sh/react-dom@18.3.1",
-    "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
-    "recharts": "https://esm.sh/recharts@2.13.0?external=react,react-dom",
-    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react,react-dom"
-  }
-}
-</script>
-
-<!-- Babel standalone: transforms the JSX in LedgerApp.jsx into plain JS
-     right in the browser, so no build step is needed. -->
-<script src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js"></script>
-
-<style>
-  html, body, #root { height: 100%; margin: 0; padding: 0; }
-  body { background: #05070C; overscroll-behavior: none; }
-  #boot-msg {
-    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
-    color: #7C8AA0; font-family: ui-monospace, monospace; font-size: 13px; text-align: center; padding: 24px;
-  }
-</style>
-</head>
-<body>
-<div id="root"><div id="boot-msg">Loading Ledger…</div></div>
-
-<script type="module">
-  const bootMsg = document.getElementById("boot-msg");
-
-  async function boot() {
-    try {
-      const res = await fetch("./LedgerApp.jsx", { cache: "no-cache" });
-      if (!res.ok) throw new Error("Couldn't fetch LedgerApp.jsx (" + res.status + ")");
-      const source = await res.text();
-
-      // Only the "react" preset is used (not preset-env), so import/export
-      // statements are left untouched and get resolved by the import map above.
-      const { code } = Babel.transform(source, {
-        presets: ["react"],
-        filename: "LedgerApp.jsx",
-        sourceType: "module",
-      });
-
-      const blob = new Blob([code], { type: "text/javascript" });
-      const blobUrl = URL.createObjectURL(blob);
-      const [{ default: LedgerApp }, React, { createRoot }] = await Promise.all([
-        import(blobUrl),
-        import("react"),
-        import("react-dom/client"),
-      ]);
-      URL.revokeObjectURL(blobUrl);
-
-      const root = createRoot(document.getElementById("root"));
-      root.render(React.createElement(LedgerApp));
-    } catch (err) {
-      console.error(err);
-      if (bootMsg) {
-        bootMsg.textContent = "Failed to load: " + (err && err.message ? err.message : err);
-      }
+  <!-- Resolve bare imports (react, recharts, lucide-react) to CDN ES modules -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react-dom": "https://esm.sh/react-dom@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react",
+      "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom"
     }
   }
+  </script>
 
-  boot();
+  <style>
+    html, body, #root { height: 100%; margin: 0; padding: 0; background: #0A0E16; }
+    * { box-sizing: border-box; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
 
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+  <script type="module">
+    // Fetch the raw JSX source and transform it with Babel at runtime.
+    const res = await fetch('./LedgerApp.jsx');
+    if (!res.ok) {
+      document.getElementById('root').innerHTML =
+        '<p style="color:#EDEFF3;font-family:sans-serif;padding:24px;">Couldn\'t load LedgerApp.jsx \u2014 make sure it\'s uploaded in the same folder as index.html.</p>';
+      throw new Error('LedgerApp.jsx not found');
+    }
+    const source = await res.text();
+
+    const { code } = Babel.transform(source, {
+      presets: ['react'],
+      filename: 'LedgerApp.jsx',
+      sourceType: 'module',
     });
-  }
-</script>
+
+    const blob = new Blob([code], { type: 'text/javascript' });
+    const moduleUrl = URL.createObjectURL(blob);
+
+    const [{ default: LedgerApp }, React, { createRoot }] = await Promise.all([
+      import(moduleUrl),
+      import('react'),
+      import('react-dom/client'),
+    ]);
+
+    createRoot(document.getElementById('root')).render(React.createElement(LedgerApp));
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
