@@ -1,12 +1,12 @@
 {
   "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "Risk, edge, position sizing, FX conversion, equity curve, journal, and playbook tracking for traders.",
+  "description": "Risk, edge, and equity curve calculator for traders — journal, playbook, and session tools.",
   "start_url": "./index.html",
   "scope": "./",
-  "id": "./index.html",
+  "id": "./",
   "display": "standalone",
-  "background_color": "#0A0E16",
+  "background_color": "#05070C",
   "theme_color": "#0A0E16",
   "orientation": "portrait",
   "icons": [
