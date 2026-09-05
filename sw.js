@@ -1,60 +1,40 @@
-// Ledger service worker
-// - Caches the app shell so it works offline / installs as a PWA
-// - Also handles the "SHOW_NOTIFICATION" message the app posts for its
-//   news-event alarms, so alarms keep working even if this SW ends up
-//   controlling the page instead of the app's own internal one.
-
-const CACHE_NAME = "ledger-cache-v1";
-const ASSETS = [
+const CACHE_NAME = "ledger-shell-v1";
+const SHELL_FILES = [
   "./",
   "./index.html",
-  "./LedgerApp.jsx",
   "./manifest.json",
+  "./LedgerApp.jsx",
   "./icon.png",
 ];
 
 self.addEventListener("install", (event) => {
-  self.skipWaiting();
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(ASSETS))
-      .catch(() => {})
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_FILES)).catch(() => {})
   );
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    Promise.all([
-      self.clients.claim(),
-      caches.keys().then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-        )
-      ),
-    ])
-  );
-});
-
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.match(event.request).then(
-      (cached) =>
-        cached ||
-        fetch(event.request)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-            return res;
-          })
-          .catch(() => cached)
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
     )
   );
+  self.clients.claim();
 });
 
-self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SHOW_NOTIFICATION") {
-    self.registration.showNotification(event.data.title, event.data.options);
-  }
+// Network-first for the app shell files (so you always get fresh code when
+// online), falling back to the cache when offline.
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") return;
+
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
 });
