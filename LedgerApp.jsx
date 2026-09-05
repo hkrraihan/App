@@ -928,6 +928,7 @@ async function fetchMarketauxNews(symbols = "") {
     api_token: MARKETAUX_API_KEY,
     language: "en",
     limit: "10",
+    search: 'CPI OR PPI OR FOMC OR NFP OR "Federal Reserve" OR "interest rate" OR inflation OR "non-farm payrolls" OR "jobs report" OR "rate cut" OR "rate hike"',
   });
   if (symbols) params.set("symbols", symbols);
 
