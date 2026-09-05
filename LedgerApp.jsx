@@ -8535,7 +8535,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
           )}
 
            {marketauxArticles.map((a) => (
-            
+            <a
               key={a.id}
               href={a.url}
               target="_blank"
