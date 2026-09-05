@@ -1,13 +1,14 @@
 {
-  "name": "Ledger — Trade with Calculation",
+  "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "A trading math calculator for prop firm accounts — risk/reward, profit targets, equity curve, and trade journaling.",
+  "description": "Risk, position sizing, FX conversion, equity curve, journal, playbook and insights for traders.",
   "start_url": "./index.html",
   "scope": "./",
+  "id": "./",
   "display": "standalone",
-  "orientation": "portrait",
   "background_color": "#05070C",
   "theme_color": "#0A0E16",
+  "orientation": "portrait",
   "icons": [
     { "src": "./icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "./icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
