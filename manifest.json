@@ -1,16 +1,19 @@
 {
-  "name": "Ledger - Trade Math Calculator",
+  "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "Risk management, trade journaling, and analytics for traders.",
+  "description": "Risk, position sizing, prop-firm challenge tracking, equity curve, trade journal, and session tools for traders.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0A0E16",
+  "background_color": "#05070C",
   "theme_color": "#0A0E16",
   "orientation": "portrait",
   "icons": [
-    { "src": "icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "./icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
