@@ -1,13 +1,13 @@
 {
-  "name": "Ledger",
+  "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "Trade math calculator, equity curve tracker, and trading journal",
+  "description": "Risk, position sizing, equity curve, journal and session tools for traders.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0A0E16",
-  "theme_color": "#0A0E16",
   "orientation": "portrait",
+  "background_color": "#05070C",
+  "theme_color": "#0A0E16",
   "icons": [
     {
       "src": "icon.png",
