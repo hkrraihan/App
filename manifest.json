@@ -1,7 +1,7 @@
 {
   "name": "Ledger — Trade Math Calculator",
   "short_name": "Ledger",
-  "description": "Risk, edge, and equity curve calculator for traders — journal, playbook, and session tools.",
+  "description": "Risk, edge, and psychology tools for traders — position sizing, prop-firm rules, FX conversion, equity curve, and a trading journal.",
   "start_url": "./index.html",
   "scope": "./",
   "id": "./",
