@@ -913,10 +913,7 @@ function computeGoalProgress(trades, startBal, period) {
   return { count: periodTrades.length, netPnl, pct, periodStart };
 }
 
-// --- Financial Modeling Prep economic calendar (real upcoming FOMC/CPI/PPI/NFP events) ---
-// Get a free API key at https://financialmodelingprep.com (free tier: 250 calls/day) and paste it below.
-const FMP_API_KEY = "KCMZKCo6CyEOXLAxWSNRfL3Tp69ANXON";
-const FMP_ECON_CALENDAR_URL = "https://financialmodelingprep.com/api/v3/economic_calendar";
+const CALENDAR_PROXY_URL = "https://ledger-calendar-proxy.ledgercalc.workers.dev/calendar";
 const FMP_STORAGE_KEY = "fmp:econ-calendar:v1";
 const FMP_CACHE_MS = 12 * 60 * 60 * 1000; // 12 hours — new estimates/actuals can post mid-month
 
@@ -931,27 +928,24 @@ function currentMonthRange() {
 }
 
 async function fetchEconomicCalendar() {
-  if (!FMP_API_KEY || FMP_API_KEY === "PASTE_YOUR_FMP_API_KEY_HERE") {
-    throw new Error("Add your free Financial Modeling Prep API key to FMP_API_KEY first.");
+  if (!CALENDAR_PROXY_URL || CALENDAR_PROXY_URL.includes("yourname")) {
+    throw new Error("Set CALENDAR_PROXY_URL to your deployed Worker URL first.");
   }
 
-  const { from, to } = currentMonthRange();
-  const params = new URLSearchParams({ from, to, apikey: FMP_API_KEY });
-
-  const res = await fetch(`${FMP_ECON_CALENDAR_URL}?${params.toString()}`);
-  if (!res.ok) throw new Error(`FMP request failed (${res.status})`);
+  const res = await fetch(CALENDAR_PROXY_URL);
+  if (!res.ok) throw new Error(`Calendar request failed (${res.status})`);
   const json = await res.json();
-  if (!Array.isArray(json)) throw new Error("Unexpected response from Financial Modeling Prep.");
+  if (!Array.isArray(json)) throw new Error("Unexpected response from the calendar proxy.");
 
   return json
-    .filter((item) => item.country === "US" && ECON_KEYWORDS.test(item.event || ""))
+    .filter((item) => item.country === "USD" && ECON_KEYWORDS.test(item.title || ""))
     .map((item) => ({
-      id: `${item.event}-${item.date}`,
-      name: item.event,
+      id: `${item.title}-${item.date}`,
+      name: item.title,
       date: item.date,
       impact: (item.impact || "").toLowerCase() || "medium",
       previous: item.previous,
-      estimate: item.estimate,
+      estimate: item.forecast,
       actual: item.actual,
     }))
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
@@ -8514,7 +8508,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
               className="uppercase"
               style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
             >
-              Economic Calendar — This Month
+              Economic Calendar — This Week
             </span>
             <button
               type="button"
