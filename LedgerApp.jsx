@@ -894,6 +894,59 @@ function formatCountdown(ms) {
   return `${mins}m`;
 }
 
+function computeMonthlyStatementData(trades, journalEntries, customSetups, playbookCheckins, startingBalance, year, monthIdx) {
+  const monthPrefix = `${year}-${pad2(monthIdx + 1)}`;
+  const monthTrades = trades.filter((t) => dayKeyFromTs(t.ts).startsWith(monthPrefix));
+  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
+
+  const byDay = {};
+  monthTrades.forEach((t) => {
+    const d = new Date(t.ts).getDate();
+    byDay[d] = (byDay[d] || 0) + t.pnl;
+  });
+  const dailySeries = Array.from({ length: daysInMonth }, (_, i) => ({ day: i + 1, pnl: byDay[i + 1] || 0 }));
+  const maxAbsDay = Math.max(1, ...dailySeries.map((d) => Math.abs(d.pnl)));
+
+  const netPnl = monthTrades.reduce((s, t) => s + t.pnl, 0);
+  const wins = monthTrades.filter((t) => t.pnl > 0);
+  const winRate = monthTrades.length ? (wins.length / monthTrades.length) * 100 : 0;
+  const startBal = num(startingBalance);
+
+  const daysWithTrades = dailySeries.filter((d) => d.pnl !== 0);
+  const bestDay = daysWithTrades.length ? daysWithTrades.reduce((a, b) => (b.pnl > a.pnl ? b : a)) : null;
+  const worstDay = daysWithTrades.length ? daysWithTrades.reduce((a, b) => (b.pnl < a.pnl ? b : a)) : null;
+
+  const perf = computePerformanceMetrics(monthTrades);
+  const revengeCost = computeRevengeCostSplit(monthTrades);
+  const discipline = computeDisciplineStreak(monthTrades);
+  const completeness = computeJournalCompleteness(monthTrades);
+  const insights = computeInsights(monthTrades, customSetups);
+
+  const monthCheckins = playbookCheckins.filter((c) => c.date.startsWith(monthPrefix));
+  const cleanCheckins = monthCheckins.filter(isCleanCheckin).length;
+  const cleanPct = monthCheckins.length ? Math.round((cleanCheckins / monthCheckins.length) * 100) : null;
+
+  return {
+    monthPrefix,
+    tradeCount: monthTrades.length,
+    netPnl,
+    netPct: startBal > 0 ? (netPnl / startBal) * 100 : null,
+    winRate,
+    dailySeries,
+    maxAbsDay,
+    bestDay,
+    worstDay,
+    perf,
+    revengeCost,
+    discipline,
+    completeness,
+    bestSetup: insights.bestSetup,
+    bestMood: insights.bestMood,
+    cleanPct,
+    checkinCount: monthCheckins.length,
+  };
+}
+
 function computeGoalProgress(trades, startBal, period) {
   if (!(startBal > 0)) return null;
   const now = new Date();
@@ -2106,6 +2159,7 @@ const openPaywall = (reason) => {
   }, []);
 
   const [goals, setGoals] = useState({ weeklyTargetPct: "", monthlyTargetPct: "" });
+  const [statementMonth, setStatementMonth] = useState(null); // { year, monthIdx } or null
   const [goalsLoaded, setGoalsLoaded] = useState(false);
   const [swRegistration, setSwRegistration] = useState(null);
 
@@ -4840,7 +4894,7 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
           type="text"
           value={tradePair}
           onChange={(e) => setTradePair(e.target.value.toUpperCase())}
-          placeholder="Pair (e.g. EURUSD)"
+          placeholder="Pair"
           className="w-full rounded-lg px-3 py-2.5 mb-2 bg-transparent outline-none"
           style={{
             background: palette.field,
@@ -5232,13 +5286,32 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <StatChip
                 label={`${MONTH_NAMES[viewMonthIdx]} Total`}
                 value={`${monthTotal >= 0 ? "+" : "-"}$${fmtMoney(monthTotal)}`}
               />
               <StatChip label={`${MONTH_NAMES[viewMonthIdx]} Trades`} value={String(monthTradeCount)} />
             </div>
+
+            <button
+              type="button"
+              onClick={() => setStatementMonth({ year: viewYear, monthIdx: viewMonthIdx })}
+              disabled={monthTradeCount === 0}
+              className={`w-full flex items-center justify-center gap-2 rounded-lg py-2.5 mb-4 ${TAP}`}
+              style={{
+                background: palette.field,
+                border: `1px solid ${palette.border}`,
+                color: monthTradeCount === 0 ? palette.textFaint : palette.text,
+                fontFamily: mono,
+                fontSize: "13px",
+                fontWeight: 600,
+                opacity: monthTradeCount === 0 ? 0.6 : 1,
+              }}
+            >
+              <FileText size={15} />
+              Print {MONTH_NAMES[viewMonthIdx]} Statement
+            </button>
 
             {selectedInfo && (
               <>
@@ -9045,6 +9118,12 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
         .modal-in { animation: modalIn 0.18s ease-out; }
         input:focus, select:focus, textarea:focus { outline: none; }
         select option { background: ${palette.field}; }
+        @media print {
+          body * { visibility: hidden; }
+          #ledger-statement, #ledger-statement * { visibility: visible; }
+          #ledger-statement { position: absolute; top: 0; left: 0; width: 100%; }
+          .statement-no-print { display: none !important; }
+        }
       `}</style>
       <div
         className="w-full flex flex-col"
@@ -9417,6 +9496,170 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
           </div>
         </div>
       )}
+
+      {statementMonth && (() => {
+        const S = { text: "#19170F", muted: "#68624F", faint: "#9D9782", border: "#E6E1D4", green: "#0D9463", red: "#C43B2E", gold: "#B08A3E", bg: "#FFFFFF", bgAlt: "#F4F2EB" };
+        const data = computeMonthlyStatementData(trades, journalEntries, customSetups, playbookCheckins, startingBalance, statementMonth.year, statementMonth.monthIdx);
+        const fmtSigned = (n) => `${n >= 0 ? "+" : "-"}$${fmtMoney(n)}`;
+        const fmtRatio = (n) => (Number.isFinite(n) ? n.toFixed(2) : "\u221e");
+
+        return (
+          <div
+            className="fixed inset-0 flex items-start justify-center z-50 p-4 statement-no-print"
+            style={{ background: "rgba(5,7,12,0.9)", overflowY: "auto" }}
+            onClick={() => setStatementMonth(null)}
+          >
+            <div
+              className="w-full modal-in"
+              style={{ maxWidth: "600px", margin: "20px 0" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-3 statement-no-print">
+                <span style={{ color: "#EDEFF3", fontFamily: mono, fontSize: "14px", fontWeight: 600 }}>
+                  Statement Preview
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className={`flex items-center gap-2 rounded-lg px-4 py-2 ${TAP}`}
+                    style={{ background: S.gold, color: "#FFFFFF", fontFamily: mono, fontSize: "13px", fontWeight: 600 }}
+                  >
+                    <Download size={15} />
+                    Print / Save as PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatementMonth(null)}
+                    className={`flex items-center justify-center rounded-lg px-3 ${TAP}`}
+                    style={{ background: "transparent", border: "1px solid #7C8AA0", color: "#EDEFF3" }}
+                    aria-label="Close"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                id="ledger-statement"
+                style={{ background: S.bg, borderRadius: "12px", padding: "28px", fontFamily: sans }}
+              >
+                <div className="flex items-start justify-between mb-1" style={{ borderBottom: `2px solid ${S.gold}`, paddingBottom: "12px" }}>
+                  <div>
+                    <div style={{ fontFamily: mono, fontSize: "10px", letterSpacing: "0.14em", color: S.gold, textTransform: "uppercase" }}>
+                      Ledger \u00b7 Monthly Statement
+                    </div>
+                    <div style={{ fontFamily: mono, fontSize: "1.4rem", fontWeight: 700, color: S.text }}>
+                      {MONTH_NAMES[statementMonth.monthIdx]} {statementMonth.year}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", fontSize: "10px", color: S.faint, fontFamily: mono }}>
+                    Generated {new Date().toLocaleDateString()}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 my-4">
+                  {[
+                    { label: "Net P&L", value: fmtSigned(data.netPnl), color: data.netPnl >= 0 ? S.green : S.red },
+                    { label: "% of Account", value: data.netPct === null ? "N/A" : fmtPct(data.netPct), color: S.text },
+                    { label: "Trades", value: String(data.tradeCount), color: S.text },
+                    { label: "Win Rate", value: `${data.winRate.toFixed(1)}%`, color: S.text },
+                  ].map((c) => (
+                    <div key={c.label} style={{ background: S.bgAlt, borderRadius: "8px", padding: "10px", textAlign: "center" }}>
+                      <div style={{ fontSize: "9px", color: S.faint, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "3px" }}>{c.label}</div>
+                      <div style={{ fontFamily: mono, fontSize: "13px", fontWeight: 700, color: c.color }}>{c.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ fontSize: "11px", fontWeight: 700, color: S.text, textTransform: "uppercase", letterSpacing: "0.06em", margin: "16px 0 8px" }}>
+                  Daily P&L
+                </div>
+                <div style={{ background: S.bgAlt, borderRadius: "8px", padding: "12px 10px 4px" }}>
+                  <div className="flex items-end" style={{ height: "80px", gap: "2px" }}>
+                    {data.dailySeries.map((d) => (
+                      <div
+                        key={d.day}
+                        title={`Day ${d.day}: ${fmtSigned(d.pnl)}`}
+                        style={{
+                          flex: 1,
+                          height: `${d.pnl === 0 ? 2 : Math.max(4, (Math.abs(d.pnl) / data.maxAbsDay) * 80)}px`,
+                          background: d.pnl > 0 ? S.green : d.pnl < 0 ? S.red : S.faint,
+                          borderRadius: "1px",
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="flex justify-between" style={{ fontSize: "8px", color: S.faint, fontFamily: mono, marginTop: "4px" }}>
+                    <span>1</span>
+                    <span>{data.dailySeries.length}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 my-4">
+                  <div>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: S.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>
+                      Performance
+                    </div>
+                    {[
+                      ["Profit Factor", fmtRatio(data.perf.profitFactor)],
+                      ["Win/Loss Ratio", fmtRatio(data.perf.winLossRatio)],
+                      ["Expectancy", fmtSigned(data.perf.expectancy)],
+                      ["Largest Win", fmtSigned(data.perf.largestWin)],
+                      ["Largest Loss", fmtSigned(data.perf.largestLoss)],
+                      ["Max Drawdown", `$${fmtMoney(data.perf.maxDD)}`],
+                    ].map(([l, v]) => (
+                      <div key={l} className="flex justify-between" style={{ fontSize: "11px", padding: "3px 0", borderBottom: `1px solid ${S.border}` }}>
+                        <span style={{ color: S.muted }}>{l}</span>
+                        <span style={{ fontFamily: mono, color: S.text, fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: S.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "6px" }}>
+                      Process & Discipline
+                    </div>
+                    {[
+                      ["Best Day", data.bestDay ? `${fmtSigned(data.bestDay.pnl)} (day ${data.bestDay.day})` : "N/A"],
+                      ["Worst Day", data.worstDay ? `${fmtSigned(data.worstDay.pnl)} (day ${data.worstDay.day})` : "N/A"],
+                      ["Revenge Trades", `${data.revengeCost.revengeCount} (${fmtSigned(data.revengeCost.revengeTotal)})`],
+                      ["Discipline Streak", `${data.discipline.current}d (best ${data.discipline.best}d)`],
+                      ["Journal Completeness", `${data.completeness}%`],
+                      ["Playbook Clean Days", data.cleanPct === null ? "N/A" : `${data.cleanPct}% (${data.checkinCount} check-ins)`],
+                    ].map(([l, v]) => (
+                      <div key={l} className="flex justify-between" style={{ fontSize: "11px", padding: "3px 0", borderBottom: `1px solid ${S.border}` }}>
+                        <span style={{ color: S.muted }}>{l}</span>
+                        <span style={{ fontFamily: mono, color: S.text, fontWeight: 600 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {(data.bestSetup || data.bestMood) && (
+                  <div className="flex gap-2 mb-2">
+                    {data.bestSetup && (
+                      <div style={{ flex: 1, background: `${S.gold}14`, border: `1px solid ${S.gold}55`, borderRadius: "8px", padding: "8px 10px" }}>
+                        <div style={{ fontSize: "9px", color: S.gold, textTransform: "uppercase", letterSpacing: "0.06em" }}>Top Setup</div>
+                        <div style={{ fontSize: "12px", color: S.text, fontWeight: 600 }}>{data.bestSetup.label}</div>
+                      </div>
+                    )}
+                    {data.bestMood && (
+                      <div style={{ flex: 1, background: `${S.green}14`, border: `1px solid ${S.green}55`, borderRadius: "8px", padding: "8px 10px" }}>
+                        <div style={{ fontSize: "9px", color: S.green, textTransform: "uppercase", letterSpacing: "0.06em" }}>Best Mood</div>
+                        <div style={{ fontSize: "12px", color: S.text, fontWeight: 600 }}>{data.bestMood.emoji} {data.bestMood.label}</div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ marginTop: "16px", paddingTop: "10px", borderTop: `1px solid ${S.border}`, fontSize: "9px", color: S.faint, fontFamily: mono }}>
+                  Generated by Ledger \u2014 not a substitute for broker-issued account statements.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
      {showPaywall && (
   <div
