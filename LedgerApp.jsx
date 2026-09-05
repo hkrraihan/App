@@ -1809,11 +1809,14 @@ function drawShareCard(canvas, {
   grade,
   topPair,
   avgRR,
+  recoveryFactor,
+  consistencyLabel,
+  activeDays,
   tone,
   theme,
 }) {
   const W = 1080;
-  const H = 1950;
+  const H = 1600;
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext("2d");
@@ -1851,33 +1854,11 @@ function drawShareCard(canvas, {
     ctx.restore();
   };
 
-  // ring gauge for the performance wheel
-  const paintRing = (cx, cy, radius, thickness, value, color) => {
-    ctx.save();
-    ctx.lineWidth = thickness;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = `${color}22`;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    const clamped = Math.max(0.025, Math.min(1, value));
-    const startAngle = -Math.PI / 2;
-    const endAngle = startAngle + Math.PI * 2 * clamped;
-    ctx.shadowColor = `${color}AA`;
-    ctx.shadowBlur = 16;
-    ctx.strokeStyle = color;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, startAngle, endAngle);
-    ctx.stroke();
-    ctx.restore();
-  };
-
   // ---- outer letterbox ----
   ctx.fillStyle = c.bgTo;
   ctx.fillRect(0, 0, W, H);
 
-  // ---- clipped inner card: gradient + aurora + grid + watermark ----
+  // ---- clipped inner card: gradient + aurora + grid (no watermark) ----
   ctx.save();
   roundRect(36, 36, W - 72, H - 72, 28);
   ctx.clip();
@@ -1919,16 +1900,6 @@ function drawShareCard(canvas, {
   g3.addColorStop(1, `${lineColor}00`);
   ctx.fillStyle = g3;
   ctx.fillRect(0, H * 0.55, W, H * 0.45);
-
-  ctx.save();
-  ctx.globalAlpha = isDark ? 0.05 : 0.035;
-  ctx.fillStyle = c.text;
-  ctx.font = "800 340px monospace";
-  ctx.textAlign = "center";
-  ctx.translate(W * 0.62, H * 0.6);
-  ctx.rotate(-0.09);
-  ctx.fillText("LEDGER", 0, 0);
-  ctx.restore();
 
   ctx.restore(); // end clip
 
@@ -2036,7 +2007,6 @@ function drawShareCard(canvas, {
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // simple up/down arrow for the pill (inline, no external glyph fn needed)
   ctx.save();
   ctx.fillStyle = lineColor;
   const pcx = pillX + pillW / 2;
@@ -2285,55 +2255,55 @@ function drawShareCard(canvas, {
     140
   );
 
-  // ---- Performance Wheel: concentric radial rings ----
-  const wheelTitleY = row3Bottom + 56;
+  // ---- Deeper Stats (replaces Performance Wheel) ----
+  const deeperTitleY = row3Bottom + 56;
   ctx.fillStyle = c.gold;
-  roundRect(chartX, wheelTitleY - 20, 5, 26, 3);
+  roundRect(chartX, deeperTitleY - 20, 5, 26, 3);
   ctx.fill();
   ctx.fillStyle = c.textMuted;
   ctx.font = "600 22px monospace";
   ctx.textAlign = "left";
-  ctx.fillText("PERFORMANCE WHEEL", chartX + 18, wheelTitleY);
+  ctx.fillText("DEEPER STATS", chartX + 18, deeperTitleY);
 
-  const wheelCx = chartX + chartW / 2;
-  const wheelTop = wheelTitleY + 46;
-  const wheelRadius = 130;
-  const wheelCy = wheelTop + wheelRadius;
-
-  const winRateColor = winRate >= 50 ? c.green : c.red;
-  const pfColor = c.goldBright;
-  const discColor = disciplineStreak > 0 ? c.green : c.textMuted;
-
-  const winRateVal = Math.max(0, Math.min(1, winRate / 100));
-  const pfVal = Number.isFinite(profitFactor) ? Math.max(0, Math.min(1, profitFactor / 3)) : 1;
-  const discVal = Math.max(0, Math.min(1, disciplineStreak / 30));
-
-  paintRing(wheelCx, wheelCy, 130, 18, winRateVal, winRateColor);
-  paintRing(wheelCx, wheelCy, 98, 18, pfVal, pfColor);
-  paintRing(wheelCx, wheelCy, 66, 18, discVal, discColor);
-
-  const legendItems = [
-    { label: "WIN RATE", value: `${fmt(winRate, 0)}%`, color: winRateColor },
-    { label: "PROFIT FACTOR", value: fmtRatioLocal(profitFactor), color: pfColor },
-    { label: "DISCIPLINE", value: `${disciplineStreak}d`, color: discColor },
-  ];
-  const legendY = wheelCy + wheelRadius + 60;
-  const legendColW = chartW / 3;
-  legendItems.forEach((item, i) => {
-    const colCx = chartX + legendColW * i + legendColW / 2;
-    ctx.beginPath();
-    ctx.arc(colCx - 46, legendY - 6, 6, 0, Math.PI * 2);
-    ctx.fillStyle = item.color;
-    ctx.fill();
-    ctx.textAlign = "left";
-    ctx.fillStyle = c.textFaint;
-    ctx.font = "600 14px sans-serif";
-    ctx.fillText(item.label, colCx - 32, legendY - 1);
-    ctx.fillStyle = item.color;
-    ctx.font = "700 20px monospace";
-    ctx.fillText(item.value, colCx - 32, legendY + 24);
-  });
-  ctx.textAlign = "left";
+  const deeperRowY = deeperTitleY + 34;
+  drawChipRow(
+    deeperRowY,
+    [
+      {
+        label: "RECOVERY FACTOR",
+        value: fmtRatioLocal(recoveryFactor),
+        color: Number.isFinite(recoveryFactor) && recoveryFactor >= 2 ? c.green : c.goldBright,
+        accent: true,
+        sub: !Number.isFinite(recoveryFactor)
+          ? "No drawdown"
+          : recoveryFactor >= 4
+          ? "Excellent"
+          : recoveryFactor >= 2
+          ? "Solid"
+          : "Needs work",
+      },
+      {
+        label: "CONSISTENCY",
+        value: consistencyLabel || "\u2014",
+        color:
+          consistencyLabel === "Low"
+            ? c.green
+            : consistencyLabel === "Medium"
+            ? c.gold
+            : consistencyLabel === "High"
+            ? c.red
+            : c.textMuted,
+        sub: consistencyLabel ? "Day-to-day volatility" : "Not enough data",
+      },
+      {
+        label: "ACTIVE DAYS",
+        value: `${activeDays}/7`,
+        color: c.text,
+        sub: "Days you traded",
+      },
+    ],
+    140
+  );
 
   const footerY = H - 100;
   const divGrad = ctx.createLinearGradient(80, 0, W - 80, 0);
@@ -3835,6 +3805,9 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
 
     const recap = buildWeekRecap(weekTrades, startBal, weekJournalRows);
     const discipline = computeDisciplineStreak(trades);
+    const weekPerf = computePerformanceMetrics(weekTrades);
+    const weekConsistency = computeConsistencyScore(weekTrades);
+    const activeDaySet = new Set(weekTrades.map((t) => dayKeyFromTs(t.ts)));
 
     try {
       if (!shareCanvasRef.current) {
@@ -3856,6 +3829,10 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         grade: recap.grade,
         topPair: recap.topPair,
         avgRR: recap.avgRR,
+        recoveryFactor: weekPerf.recoveryFactor,
+        consistencyLabel: weekConsistency ? 
+        weekConsistency.label : null,
+        activeDays: activeDaySet.size,
         tone: recap.netPct >= 0 ? "good" : "bad",
         theme,
       });
