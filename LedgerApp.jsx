@@ -315,57 +315,6 @@ async function fetchLiveFxRates() {
   return null;
 }
 
-const FF_CALENDAR_URLS = [
-  "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-  "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
-];
-
-async function fetchForexFactoryEvents() {
-  const results = await Promise.allSettled(
-    FF_CALENDAR_URLS.map((url) =>
-      fetch(url).then((r) => {
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
-        return r.json();
-      })
-    )
-  );
-
-  const merged = [];
-  let anyOk = false;
-  results.forEach((r) => {
-    if (r.status === "fulfilled" && Array.isArray(r.value)) {
-      anyOk = true;
-      merged.push(...r.value);
-    }
-  });
-
-  if (!anyOk) {
-    throw new Error("Couldn't reach the Forex Factory calendar feed.");
-  }
-
-  return merged
-    .filter(
-      (e) =>
-        e &&
-        e.country === "USD" &&
-        e.title &&
-        e.date &&
-        String(e.impact || "").toLowerCase() !== "holiday"
-    )
-    .map((e) => {
-      const d = new Date(e.date);
-      if (Number.isNaN(d.getTime())) return null;
-      const impact = String(e.impact || "").toLowerCase();
-      return {
-        name: e.title,
-        impact: impact === "high" || impact === "medium" || impact === "low" ? impact : "low",
-        date: dayKeyFromDate(d),
-        time: `${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
-      };
-    })
-    .filter(Boolean);
-}
-
 const CURRENCY_NAMES = {
   USD: "US Dollar",
   EUR: "Euro",
@@ -964,49 +913,40 @@ function computeGoalProgress(trades, startBal, period) {
   return { count: periodTrades.length, netPnl, pct, periodStart };
 }
 
-const COMMON_ECONOMIC_EVENTS = [
-  { name: "Non-Farm Payrolls (NFP)", impact: "high", time: "13:30", rule: "firstFriday" },
-  { name: "CPI Release", impact: "high", time: "13:30", rule: "day", day: 13 },
-  { name: "FOMC Rate Decision", impact: "high", time: "19:00", rule: "day", day: 18 },
-  { name: "Unemployment Claims", impact: "medium", time: "13:30", rule: "everyThursday" },
-];
+// --- Marketaux market news (replaces the old Forex Factory calendar) ---
+// Get a free token at https://www.marketaux.com (no card required) and paste it below.
+const MARKETAUX_API_KEY = "PASTE_YOUR_MARKETAUX_TOKEN_HERE";
+const MARKETAUX_NEWS_URL = "https://api.marketaux.com/v1/news/all";
+const MARKETAUX_STORAGE_KEY = "marketaux:news:v1";
+const MARKETAUX_CACHE_MS = 30 * 60 * 1000; // 30 min cache — keeps you well under the 100/day free limit
 
-function firstFridayOfMonth(year, monthIdx) {
-  const d = new Date(year, monthIdx, 1);
-  const day = d.getDay();
-  const offset = (5 - day + 7) % 7;
-  d.setDate(1 + offset);
-  return d;
-}
-
-function allThursdaysOfMonth(year, monthIdx) {
-  const dates = [];
-  const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
-  for (let day = 1; day <= daysInMonth; day++) {
-    const d = new Date(year, monthIdx, day);
-    if (d.getDay() === 4) dates.push(d);
+async function fetchMarketauxNews(symbols = "") {
+  if (!MARKETAUX_API_KEY || MARKETAUX_API_KEY === "PASTE_YOUR_MARKETAUX_TOKEN_HERE") {
+    throw new Error("Add your free Marketaux API token to MARKETAUX_API_KEY first.");
   }
-  return dates;
-}
-
-function buildCommonEventsForMonth(year, monthIdx) {
-  const events = [];
-  COMMON_ECONOMIC_EVENTS.forEach((tpl) => {
-    if (tpl.rule === "firstFriday") {
-      const d = firstFridayOfMonth(year, monthIdx);
-      events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
-    } else if (tpl.rule === "day") {
-      const daysInMonth = new Date(year, monthIdx + 1, 0).getDate();
-      const day = Math.min(tpl.day, daysInMonth);
-      const d = new Date(year, monthIdx, day);
-      events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
-    } else if (tpl.rule === "everyThursday") {
-      allThursdaysOfMonth(year, monthIdx).forEach((d) => {
-        events.push({ name: tpl.name, impact: tpl.impact, time: tpl.time, date: dayKeyFromDate(d) });
-      });
-    }
+  const params = new URLSearchParams({
+    api_token: MARKETAUX_API_KEY,
+    language: "en",
+    limit: "10",
   });
-  return events;
+  if (symbols) params.set("symbols", symbols);
+
+  const res = await fetch(`${MARKETAUX_NEWS_URL}?${params.toString()}`);
+  if (!res.ok) throw new Error(`Marketaux request failed (${res.status})`);
+  const json = await res.json();
+  if (!json || !Array.isArray(json.data)) throw new Error("Unexpected response from Marketaux.");
+
+  return json.data.map((item) => {
+    const entity = Array.isArray(item.entities) && item.entities.length ? item.entities[0] : null;
+    return {
+      id: item.uuid,
+      title: item.title,
+      source: item.source,
+      url: item.url,
+      publishedAt: item.published_at,
+      sentiment: entity && typeof entity.sentiment_score === "number" ? entity.sentiment_score : null,
+    };
+  });
 }
 
 const SW_SCRIPT = `
@@ -2087,6 +2027,9 @@ export default function LedgerApp() {
 
   const [newsEvents, setNewsEvents] = useState([]);
   const [newsLoaded, setNewsLoaded] = useState(false);
+  const [marketauxArticles, setMarketauxArticles] = useState([]);
+  const [marketauxStatus, setMarketauxStatus] = useState("idle"); // idle | loading | live | error
+  const [marketauxError, setMarketauxError] = useState("");
   const [newEventName, setNewEventName] = useState("");
   const [newEventImpact, setNewEventImpact] = useState("high");
   const [newEventDate, setNewEventDate] = useState("");
@@ -2161,7 +2104,6 @@ const openPaywall = (reason) => {
 
   const [goals, setGoals] = useState({ weeklyTargetPct: "", monthlyTargetPct: "" });
   const [goalsLoaded, setGoalsLoaded] = useState(false);
-  const [quickAddMsg, setQuickAddMsg] = useState("");
   const [swRegistration, setSwRegistration] = useState(null);
 
   useEffect(() => {
@@ -2458,6 +2400,31 @@ const openPaywall = (reason) => {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cached = await window.storage.get(MARKETAUX_STORAGE_KEY, false);
+        if (cached && cached.value) {
+          const parsed = JSON.parse(cached.value);
+          if (Array.isArray(parsed.articles)) {
+            if (!cancelled) {
+              setMarketauxArticles(parsed.articles);
+              setMarketauxStatus("live");
+            }
+            if (parsed.fetchedAt && Date.now() - parsed.fetchedAt < MARKETAUX_CACHE_MS) return;
+          }
+        }
+      } catch (err) {
+        // no cache yet — fall through to a fresh fetch
+      }
+      if (!cancelled) loadMarketauxNews();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
@@ -2648,55 +2615,20 @@ const openPaywall = (reason) => {
     persistNews(newsEvents.filter((e) => e.id !== id));
   };
 
-  const quickAddCommonEvents = async () => {
-    setQuickAddMsg("");
-    const now = new Date();
-
-    let candidates = null;
-    let source = "estimate";
-    let warning = "";
-
+  const loadMarketauxNews = async () => {
+    setMarketauxError("");
+    setMarketauxStatus("loading");
     try {
-      candidates = await fetchForexFactoryEvents();
-      source = "live";
+      const articles = await fetchMarketauxNews();
+      setMarketauxArticles(articles);
+      setMarketauxStatus("live");
+      window.storage
+        .set(MARKETAUX_STORAGE_KEY, JSON.stringify({ articles, fetchedAt: Date.now() }), false)
+        .catch(() => {});
     } catch (err) {
-      warning = `${err.message} Using the built-in estimate list instead. `;
-      candidates = null;
+      setMarketauxStatus("error");
+      setMarketauxError(err.message || "Couldn't load market news.");
     }
-
-    if (!candidates || candidates.length === 0) {
-      candidates = buildCommonEventsForMonth(now.getFullYear(), now.getMonth());
-      source = "estimate";
-    }
-
-    if (candidates.length === 0) {
-      setQuickAddMsg(`${warning}No events found.`);
-      return;
-    }
-
-    const existingKeys = new Set(newsEvents.map((e) => `${e.name}|${e.date}`));
-    const toAdd = candidates
-      .filter((c) => !existingKeys.has(`${c.name}|${c.date}`))
-      .map((c) => ({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        name: c.name,
-        impact: c.impact,
-        date: c.date,
-        time: c.time,
-        alarm: true,
-        rung: false,
-      }));
-
-    if (toAdd.length === 0) {
-      setQuickAddMsg(`${warning}Already added, or none apply.`);
-      return;
-    }
-    persistNews([...newsEvents, ...toAdd]);
-    setQuickAddMsg(
-      `${warning}Added ${toAdd.length} event${toAdd.length === 1 ? "" : "s"}${
-        source === "live" ? " (live from Forex Factory)" : " (built-in estimates)"
-      }.`
-    );
   };
 
   const persistTrades = async (next) => {
@@ -8569,33 +8501,78 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
             home-screen app) close to the event.
           </p>
 
-          <button
-            type="button"
-            onClick={quickAddCommonEvents}
-            className={`w-full flex items-center justify-center gap-2 rounded-lg py-3 mb-2 ${TAP}`}
-            style={{
-              background: palette.field,
-              border: `1px solid ${palette.border}`,
-              color: palette.text,
-              fontFamily: mono,
-              fontSize: "13px",
-              fontWeight: 600,
-              transition: `${THEME_TRANSITION}, transform 0.15s ease`,
-            }}
-          >
-            <Newspaper size={16} />
-            Quick-Add Upcoming US Events
-          </button>
-          {quickAddMsg && (
+          <div className="flex items-center justify-between mb-1.5">
+            <span
+              className="uppercase"
+              style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}
+            >
+              Latest Market News
+            </span>
+            <button
+              type="button"
+              onClick={loadMarketauxNews}
+              className={TAP}
+              style={{ color: palette.gold, fontSize: "11px", fontFamily: mono }}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {marketauxStatus === "loading" && (
             <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-              {quickAddMsg}
+              Loading headlines\u2026
             </p>
           )}
+          {marketauxStatus === "error" && (
+            <p className="text-xs mb-4" style={{ color: palette.red }}>
+              {marketauxError}
+            </p>
+          )}
+          {marketauxStatus === "live" && marketauxArticles.length === 0 && (
+            <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
+              No headlines returned.
+            </p>
+          )}
+
+          {marketauxArticles.map((a) => (
+            
+              key={a.id}
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block rounded-lg px-3 py-2.5 mb-2"
+              style={{
+                background: palette.surface,
+                border: `1px solid ${palette.border}`,
+                boxShadow: palette.shadow,
+                textDecoration: "none",
+              }}
+            >
+              <div style={{ color: palette.text, fontSize: "13px", marginBottom: "3px" }}>{a.title}</div>
+              <div className="flex items-center justify-between">
+                <span style={{ color: palette.textFaint, fontSize: "11px" }}>
+                  {a.source} \u00b7 {a.publishedAt ? new Date(a.publishedAt).toLocaleString() : ""}
+                </span>
+                {typeof a.sentiment === "number" && (
+                  <span
+                    style={{
+                      fontFamily: mono,
+                      fontSize: "10px",
+                      color: a.sentiment > 0 ? palette.green : a.sentiment < 0 ? palette.red : palette.textMuted,
+                    }}
+                  >
+                    {a.sentiment > 0 ? "+" : ""}
+                    {a.sentiment.toFixed(2)}
+                  </span>
+                )}
+              </div>
+            </a>
+          ))}
+
           <p className="text-xs mb-4" style={{ color: palette.textFaint }}>
-            Pulls real event dates and times for the next ~2 weeks (NFP, CPI, FOMC, and more) from a live
-            economic calendar feed. If that feed is ever unreachable, this falls back to a built-in estimate
-            list for the current month instead — always double-check exact times against an official
-            calendar in that case.
+            (100 requests/day). This is news, not scheduled
+            event times, so it won't auto-fill the alarm calendar below — add specific events you want a
+            countdown/alarm for manually.
           </p>
 
           <span className="block mb-1.5 uppercase" style={{ color: palette.textMuted, letterSpacing: "0.08em", fontSize: "11px" }}>
