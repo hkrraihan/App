@@ -8538,7 +8538,7 @@ const closestWeekday = [...mistakePatterns.weekdayRows].sort(
 
           {econEvents.map((ev) => {
             const evDate = new Date(ev.date.replace(" ", "T"));
-            const released = ev.actual !== null && ev.actual !== undefined;
+            const released = ev.actual !== null && ev.actual !== undefined && ev.actual !== "";
             return (
               <div
                 key={ev.id}
