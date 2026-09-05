@@ -1,57 +1,55 @@
 // Ledger service worker
-// - Caches the app shell (this repo's own files) so the app opens offline.
-// - Leaves CDN requests (esm.sh, fonts, tailwind) to the network as-is, so
-//   you always get the pinned library versions rather than a stale cache.
-// - Also understands the SHOW_NOTIFICATION message the app itself posts for
-//   its news-event alarms, so it behaves the same as the temporary worker
-//   the app registers internally.
+// - Caches the app shell so it works offline / installs as a PWA
+// - Also handles the "SHOW_NOTIFICATION" message the app posts for its
+//   news-event alarms, so alarms keep working even if this SW ends up
+//   controlling the page instead of the app's own internal one.
 
-const CACHE_NAME = "ledger-shell-v1";
-const APP_SHELL = ["./", "./index.html", "./manifest.json", "./LedgerApp.jsx", "./icon.png"];
+const CACHE_NAME = "ledger-cache-v1";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./LedgerApp.jsx",
+  "./manifest.json",
+  "./icon.png",
+];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .catch(() => {
-        // Non-fatal — e.g. a file listed above doesn't exist yet.
-      })
+      .then((cache) => cache.addAll(ASSETS))
+      .catch(() => {})
   );
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
-      .then(() => self.clients.claim())
+    Promise.all([
+      self.clients.claim(),
+      caches.keys().then((keys) =>
+        Promise.all(
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
+        )
+      ),
+    ])
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-
-  // Only handle same-origin GET requests for the app shell; let everything
-  // else (CDN scripts, fonts, cross-origin data) go straight to the network.
-  if (event.request.method !== "GET" || url.origin !== self.location.origin) {
-    return;
-  }
-
+  if (event.request.method !== "GET") return;
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const network = fetch(event.request)
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
+    caches.match(event.request).then(
+      (cached) =>
+        cached ||
+        fetch(event.request)
+          .then((res) => {
+            const copy = res.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+            return res;
+          })
+          .catch(() => cached)
+    )
   );
 });
 
