@@ -1734,17 +1734,27 @@ function buildWeekRecap(weekTrades, startBal, weekJournalRows = []) {
   const perf = computePerformanceMetrics(weekTrades);
   const grade = computeDisciplineGrade(weekTrades);
 
-  const pairCounts = {};
-  weekJournalRows.forEach((r) => {
-    const p = (r.pair || "").trim().toUpperCase();
-    if (!p) return;
-    pairCounts[p] = (pairCounts[p] || 0) + 1;
-  });
-  const pairEntries = Object.entries(pairCounts).sort((a, b) => b[1] - a[1]);
-  const topPair = pairEntries.length ? { pair: pairEntries[0][0], count: pairEntries[0][1] } : null;
+  // Top pair now comes from the Curve-tab trade log, not the Journal tab
+  const topPairs = tradePairFrequency(weekTrades, 1);
+  const topPair = topPairs.length ? topPairs[0] : null;
 
   const rrValues = weekJournalRows.map((r) => parseFloat(r.rr)).filter((v) => Number.isFinite(v));
   const avgRR = rrValues.length ? rrValues.reduce((s, v) => s + v, 0) / rrValues.length : null;
+
+  // Trade Pace Trend — front-loaded vs back-loaded vs even, based on trade timestamps
+  let paceTrend = "Even";
+  if (weekTrades.length >= 2) {
+    const sortedTs = weekTrades.map((t) => t.ts).sort((a, b) => a - b);
+    const rangeStartTs = sortedTs[0];
+    const rangeEndTs = sortedTs[sortedTs.length - 1];
+    const midTs = (rangeStartTs + rangeEndTs) / 2;
+    const firstHalfCount = weekTrades.filter((t) => t.ts <= midTs).length;
+    const secondHalfCount = weekTrades.length - firstHalfCount;
+    const diff = firstHalfCount - secondHalfCount;
+    const threshold = Math.max(1, Math.ceil(weekTrades.length * 0.2));
+    if (diff >= threshold) paceTrend = "Front-loaded";
+    else if (-diff >= threshold) paceTrend = "Back-loaded";
+  }
 
   return {
     curve,
@@ -1760,6 +1770,7 @@ function buildWeekRecap(weekTrades, startBal, weekJournalRows = []) {
     grade: grade.grade,
     topPair,
     avgRR,
+    paceTrend,
   };
 }
 
@@ -1808,7 +1819,7 @@ function drawShareCard(canvas, {
   profitFactor,
   grade,
   topPair,
-  avgRR,
+  paceTrend,
   recoveryFactor,
   consistencyLabel,
   activeDays,
@@ -2225,7 +2236,6 @@ function drawShareCard(canvas, {
         label: "PROFIT FACTOR",
         value: fmtRatioLocal(profitFactor),
         color: Number.isFinite(profitFactor) && profitFactor >= 1.5 ? c.green : c.goldBright,
-        accent: true,
         sub: !Number.isFinite(profitFactor)
           ? "No losses"
           : profitFactor >= 2
@@ -2235,7 +2245,6 @@ function drawShareCard(canvas, {
           : profitFactor >= 1
           ? "Breakeven+"
           : "Under 1.0",
-        bar: Number.isFinite(profitFactor) ? profitFactor / 3 : 1,
       },
       {
         label: "TOP PAIR",
@@ -2245,17 +2254,17 @@ function drawShareCard(canvas, {
         sub: topPair ? `${topPair.count} trade${topPair.count === 1 ? "" : "s"}` : undefined,
       },
       {
-        label: "AVG R:R",
-        value: avgRR !== null ? avgRR.toFixed(1) : "\u2014",
-        color: c.text,
-        sub: avgRR === null ? undefined : avgRR >= 2 ? "Great ratio" : avgRR >= 1 ? "Positive" : "Below 1:1",
-        bar: avgRR !== null ? Math.min(1, avgRR / 3) : 0,
+        label: "TRADE PACE",
+        value: paceTrend || "Even",
+        color: paceTrend === "Front-loaded" ? c.gold : paceTrend === "Back-loaded" ? c.goldBright : c.text,
+        small: true,
+        sub: "vs rest of week",
       },
     ],
     140
   );
 
-  // ---- Deeper Stats (replaces Performance Wheel) ----
+  // ---- Deeper Stats ----
   const deeperTitleY = row3Bottom + 56;
   ctx.fillStyle = c.gold;
   roundRect(chartX, deeperTitleY - 20, 5, 26, 3);
@@ -2273,7 +2282,6 @@ function drawShareCard(canvas, {
         label: "RECOVERY FACTOR",
         value: fmtRatioLocal(recoveryFactor),
         color: Number.isFinite(recoveryFactor) && recoveryFactor >= 2 ? c.green : c.goldBright,
-        accent: true,
         sub: !Number.isFinite(recoveryFactor)
           ? "No drawdown"
           : recoveryFactor >= 4
@@ -2304,18 +2312,6 @@ function drawShareCard(canvas, {
     ],
     140
   );
-
-  const footerY = H - 100;
-  const divGrad = ctx.createLinearGradient(80, 0, W - 80, 0);
-  divGrad.addColorStop(0, `${c.gold}00`);
-  divGrad.addColorStop(0.5, `${c.gold}99`);
-  divGrad.addColorStop(1, `${c.gold}00`);
-  ctx.strokeStyle = divGrad;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(80, footerY);
-  ctx.lineTo(W - 80, footerY);
-  ctx.stroke();
 
   ctx.fillStyle = c.textFaint;
   ctx.font = "400 20px monospace";
@@ -3814,28 +3810,27 @@ const ensureJournalRowForDate = (dateKey, setupId) => {
         setShareError("Couldn't generate the image, please try again.");
         return;
       }
-      const dataUrl = drawShareCard(shareCanvasRef.current, {
-        rangeLabel: recap.rangeLabel,
-        tradeCount: recap.tradeCount,
-        winRate: recap.winRate,
-        netPct: recap.netPct,
-        curve: recap.curve,
-        bestStreak: recap.bestStreak,
-        worstStreak: recap.worstStreak,
-        topSetup: recap.topSetup,
-        revengeCount: recap.revengeCount,
-        disciplineStreak: discipline.current,
-        profitFactor: recap.profitFactor,
-        grade: recap.grade,
-        topPair: recap.topPair,
-        avgRR: recap.avgRR,
-        recoveryFactor: weekPerf.recoveryFactor,
-        consistencyLabel: weekConsistency ? 
-        weekConsistency.label : null,
-        activeDays: activeDaySet.size,
-        tone: recap.netPct >= 0 ? "good" : "bad",
-        theme,
-      });
+const dataUrl = drawShareCard(shareCanvasRef.current, {
+  rangeLabel: recap.rangeLabel,
+  tradeCount: recap.tradeCount,
+  winRate: recap.winRate,
+  netPct: recap.netPct,
+  curve: recap.curve,
+  bestStreak: recap.bestStreak,
+  worstStreak: recap.worstStreak,
+  topSetup: recap.topSetup,
+  revengeCount: recap.revengeCount,
+  disciplineStreak: discipline.current,
+  profitFactor: recap.profitFactor,
+  grade: recap.grade,
+  topPair: recap.topPair,
+  paceTrend: recap.paceTrend,
+  recoveryFactor: weekPerf.recoveryFactor,
+  consistencyLabel: weekConsistency ? weekConsistency.label : null,
+  activeDays: activeDaySet.size,
+  tone: recap.netPct >= 0 ? "good" : "bad",
+  theme,
+});
       setShareImageUrl(dataUrl);
     } catch (err) {
       setShareError("Couldn't generate the image, please try again.");
